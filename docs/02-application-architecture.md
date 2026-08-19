@@ -27,7 +27,7 @@
 ```text
 赛前公网实例                         赛中本地实例
 https://debug.example.com/v1        http://10.20.0.1:4000/v1
-Docker + Caddy                      Mac mini + launchd
+Linux + systemd + nginx             Mac mini + launchd
 ```
 
 两边保持相同请求格式、模型别名和错误结构。选手程序在正式比赛时只更换服务地址。
@@ -36,19 +36,23 @@ Docker + Caddy                      Mac mini + launchd
 
 | 路径 | 访问者 | 保护方式 |
 | --- | --- | --- |
-| `/` | 选手 | 选手账号与独立 HttpOnly 会话 |
-| `/judge/questions`、`/judge/answers` | 评委 | 评委账号与独立 HttpOnly 会话 |
+| `/login` | 评委、选手 | 统一登录页，按账号密码判定角色 |
+| `/` | 选手 | 选手账号与 `modelmux_competition_session` |
+| `/judge/questions`、`/judge/answers` | 评委 | 评委账号与同一个 `modelmux_competition_session` |
 | `/admin` | 管理员 | 独立管理密码与签名 HttpOnly 会话 |
 | `/api/admin/*` | 管理控制台 | 服务端再次验证管理员会话 |
-| `/health` | 部署监控 | 不含密钥和路由详情 |
+| `/health` | 部署监控 | 不含密钥和路由详情，数据库故障只回分类码 |
 | `/v1/models` | 选手程序 | 选手 Bearer Key |
 | `/v1/chat/completions` | 选手程序 | 选手 Bearer Key、白名单、限流 |
 | `/v1/messages` | 选手程序 | 同一选手 Key（`x-api-key`）、`anthropic-version`、白名单、限流 |
-| `/api/competition/contestant/playground` | 已登录选手 | Cookie、同源校验、白名单、独立 RPM 限流；不预留选手总额度 |
+
+评委和选手共用一个会话 Cookie：同一台电脑同一时刻只能是其中一个身份，服务端也据此把访问另一端路径的人送回自己的工作台。管理员会话独立，可与任一端并存。
 
 未配置完整的管理密码和会话签名密钥时，管理员登录返回 `503`，不会以匿名方式开放。选手接口未配置 Client Key 时返回 `503 client_auth_not_configured`；提供错误 Key 时返回 `401 invalid_api_key`。
 
 管理员可在“系统设置”停止模型 API。停止后，OpenAI 与 Claude 兼容模型端点的新请求统一返回 `503 service_suspended`，管理控制台不受影响。`/health` 返回 HTTP 200、`status: "suspended"`、`ready: true` 和 `apiReady: false`，使部署平台继续监控进程，同时明确模型 API 并未开放。
+
+`/health` 还会探测考核数据库：配置了 `MODELMUX_DATABASE_URL` 却连不上时返回 HTTP 503、`status: "degraded"`、`ready: false`，并在 `database` 字段给出 `unreachable`、`auth_failed`、`missing_database`、`timeout` 之一。停服开关只关模型 API，答题、评委工作台和登录仍然全靠 MySQL，所以数据库故障的优先级高于停服状态。探测只做一次 `SELECT 1` 并带 2 秒超时，不触发建表；没有配置数据库的纯网关实例只报 `configured: false`，不影响就绪判定。
 
 ## 3. 模型路由
 
@@ -74,7 +78,7 @@ qwen-pro
 4. 一旦选定上游响应并开始向客户端返回，禁止切换供应商，避免拼接两条 SSE 流。
 5. `4xx` 业务错误不会自动故障切换，防止重复提交无效请求。
 6. Flash、Pro、Max 是官方模型规格，不代表思考开关或推理强度；网关不根据规格名称覆盖参数。
-7. Playground 使用独立的内部客户端身份记录和限流，`contestantId` 固定为空，因此不会调用选手额度预留与退款逻辑；普通 `/v1/chat/completions` 仍按选手 API Key 扣减额度。
+7. Playground 没有专用后端，浏览器直接拿选手自己的 API Key 调 `/v1/chat/completions`，因此和外部客户端走完全相同的鉴权、白名单、限流与额度路径：每次成功调用 `api_requests_used` 都 +1，上游失败会退回，测试模式下同样扣减剩余额度。
 8. DeepSeek V4 官方使用 `thinking.type=enabled|disabled` 与可选的 `reasoning_effort=high|max`；Qwen Chat Completions 使用 `enable_thinking` 与可选的正整数 `thinking_budget`。
 9. 切换至硅基流动备用路由时，适配层只做供应商协议必需的等价转换，不改变显式思考开关；DeepSeek V4 未指定开关时遵循官方默认的思考模式。
 10. Claude 兼容入口把 Messages API 的 `system`、内容块、图片和工具调用转换到同一内部调用链，并将普通响应或流式事件转换回 Claude 结构；它不暴露任何供应商 Key，也不绕过选手额度。

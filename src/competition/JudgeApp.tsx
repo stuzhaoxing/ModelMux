@@ -20,6 +20,7 @@ import {
   judgeViewRoutes,
   type JudgeView,
 } from "@/lib/competition/navigation";
+import { eventStreamRetryDelayMs } from "@/lib/competition/event-stream";
 import type { ActivityEntry, CompetitionQuestion, JudgeAnswerRow, JudgeQuestion, SessionUser } from "@/lib/competition/types";
 import type { OperationMode } from "@/lib/gateway/operation-mode";
 import { apiRequest, formatCompetitionTime } from "./api";
@@ -140,7 +141,10 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
   }, [loadActivity]);
 
   useEffect(() => {
-    const source = new EventSource("/api/competition/events?role=judge");
+    let source: EventSource | null = null;
+    let retryTimer: number | null = null;
+    let attempt = 0;
+    let stopped = false;
     const scheduleAnswerReload = (questionId: number) => {
       if (answerRefreshTimerRef.current !== null) window.clearTimeout(answerRefreshTimerRef.current);
       answerRefreshTimerRef.current = window.setTimeout(() => {
@@ -157,33 +161,61 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
         void loadQuestions(true).catch(() => undefined);
       }, 400);
     };
-    source.addEventListener("connected", (event) => {
-      setOnline(true);
-      const data = JSON.parse((event as MessageEvent).data) as { mode?: OperationMode };
-      if (data.mode) setMode(data.mode);
-      void loadQuestions(true);
-      if (typeof selectedId === "number") scheduleAnswerReload(selectedId);
-    });
-    source.addEventListener("mode", (event) => {
-      const data = JSON.parse((event as MessageEvent).data) as { mode: OperationMode };
-      setMode(data.mode);
-    });
-    source.addEventListener("activity", (event) => {
-      const entries = JSON.parse((event as MessageEvent).data) as ActivityEntry[];
-      mergeActivity(entries);
-      setActivityTotal((current) => current + entries.length);
-    });
-    source.addEventListener("question-updated", () => void loadQuestions(true));
-    source.addEventListener("answer-updated", (event) => {
-      const data = JSON.parse((event as MessageEvent).data) as { questionId: number };
-      scheduleQueueReload();
-      if (typeof selectedId === "number" && data.questionId === selectedId) scheduleAnswerReload(selectedId);
-    });
-    source.addEventListener("degraded", () => setOnline(false));
-    source.onerror = () => setOnline(false);
-    source.onopen = () => setOnline(true);
+    const scheduleReconnect = () => {
+      if (stopped || retryTimer !== null) return;
+      attempt += 1;
+      retryTimer = window.setTimeout(() => {
+        retryTimer = null;
+        connect();
+      }, eventStreamRetryDelayMs(attempt));
+    };
+
+    const connect = () => {
+      if (stopped) return;
+      const stream = new EventSource("/api/competition/events?role=judge");
+      source = stream;
+      stream.addEventListener("connected", (event) => {
+        attempt = 0;
+        setOnline(true);
+        const data = JSON.parse((event as MessageEvent).data) as { mode?: OperationMode };
+        if (data.mode) setMode(data.mode);
+        void loadQuestions(true);
+        if (typeof selectedId === "number") scheduleAnswerReload(selectedId);
+      });
+      stream.addEventListener("mode", (event) => {
+        const data = JSON.parse((event as MessageEvent).data) as { mode: OperationMode };
+        setMode(data.mode);
+      });
+      stream.addEventListener("activity", (event) => {
+        const entries = JSON.parse((event as MessageEvent).data) as ActivityEntry[];
+        mergeActivity(entries);
+        setActivityTotal((current) => current + entries.length);
+      });
+      stream.addEventListener("question-updated", () => void loadQuestions(true));
+      stream.addEventListener("answer-updated", (event) => {
+        const data = JSON.parse((event as MessageEvent).data) as { questionId: number };
+        scheduleQueueReload();
+        if (typeof selectedId === "number" && data.questionId === selectedId) scheduleAnswerReload(selectedId);
+      });
+      stream.addEventListener("degraded", () => setOnline(false));
+      stream.onopen = () => {
+        attempt = 0;
+        setOnline(true);
+      };
+      stream.onerror = () => {
+        setOnline(false);
+        // 浏览器只在连接被掐断时自己重连，服务重启返回 502 时它会直接放弃。
+        if (stream.readyState !== EventSource.CLOSED) return;
+        stream.close();
+        scheduleReconnect();
+      };
+    };
+
+    connect();
     return () => {
-      source.close();
+      stopped = true;
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
+      source?.close();
       if (answerRefreshTimerRef.current !== null) window.clearTimeout(answerRefreshTimerRef.current);
       answerRefreshTimerRef.current = null;
       if (queueRefreshTimerRef.current !== null) window.clearTimeout(queueRefreshTimerRef.current);

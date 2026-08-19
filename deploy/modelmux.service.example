@@ -1,0 +1,33 @@
+# 公网调试实例的 systemd 单元参考示例。
+# 安装到 /etc/systemd/system/modelmux.service 后执行：
+#   systemctl daemon-reload && systemctl enable --now modelmux
+#
+# 文件名必须和 deploy.sh 的 SERVICE_NAME（默认 modelmux）一致，
+# deploy.sh 每次部署都会 systemctl stop / restart 这个单元。
+
+[Unit]
+Description=ModelMux competition gateway
+Documentation=https://github.com/  # 换成实际仓库地址
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=modelmux
+Group=modelmux
+WorkingDirectory=/opt/modelmux
+# 密钥全部由 start-local.sh 从 /opt/modelmux/.env.local 读取，
+# 不用 EnvironmentFile，避免 systemctl show 把密钥打印出来。
+ExecStart=/opt/modelmux/scripts/start-local.sh
+Restart=always
+RestartSec=3
+
+# 可选加固：应用只需要写数据目录和日志目录
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/modelmux/data /opt/modelmux/logs
+
+[Install]
+WantedBy=multi-user.target

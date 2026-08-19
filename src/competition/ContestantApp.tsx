@@ -6,10 +6,13 @@ import {
   Clock3,
   FileEdit,
   FileText,
+  History,
   LoaderCircle,
   LockKeyhole,
+  RotateCcw,
   Save,
   Send,
+  Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
@@ -20,6 +23,16 @@ import {
   type ContestantView,
 } from "@/lib/competition/navigation";
 import { answerSaveCoversCurrentRevision } from "@/lib/competition/answer-save";
+import { eventStreamRetryDelayMs } from "@/lib/competition/event-stream";
+import {
+  clearLocalDraft,
+  draftRestoreOffer,
+  localDraftKey,
+  readLocalDraft,
+  writeLocalDraft,
+  type DraftStorage,
+  type LocalAnswerDraft,
+} from "@/lib/competition/local-draft";
 import type { CompetitionQuestion, ContestantAnswer, SessionUser } from "@/lib/competition/types";
 import type { OperationMode } from "@/lib/gateway/operation-mode";
 import { apiRequest, formatCompetitionTime } from "./api";
@@ -29,6 +42,22 @@ import { PortalFrame } from "./PortalFrame";
 import { RichTextEditor } from "./RichTextEditor";
 
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
+
+type DraftRestorePrompt = { questionId: number; draft: LocalAnswerDraft };
+
+// 本机缓存写入编辑器每次改动，600ms 一次就够覆盖断电和误关，
+// 又不会让长答案在每个按键上都做一次序列化。
+const draftCacheDelayMs = 600;
+
+function draftStorage(): DraftStorage | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage;
+  } catch {
+    // 无痕模式下访问 localStorage 会直接抛异常，兜底能力没有就没有。
+    return null;
+  }
+}
 
 export default function ContestantApp({ user }: { user: SessionUser }) {
   const pathname = usePathname();
@@ -44,7 +73,12 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [restorePrompt, setRestorePrompt] = useState<DraftRestorePrompt | null>(null);
   const contentRef = useRef("");
+  // 编辑器的 onUpdate 回调可能拿到旧一轮渲染的 state，横幅状态另存一份 ref。
+  const restorePromptRef = useRef<DraftRestorePrompt | null>(null);
+  const pendingDraftRef = useRef<{ questionId: number; contentHtml: string } | null>(null);
+  const draftTimerRef = useRef<number | null>(null);
   const dirtyRef = useRef(false);
   const savingRef = useRef(false);
   const submittingRef = useRef(false);
@@ -54,6 +88,54 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
   const selectedQuestion = questions.find((item) => item.id === selectedId) ?? null;
   const selectedAnswer = answers.find((item) => item.questionId === selectedId) ?? null;
   const locked = submitting || !selectedQuestion || selectedQuestion.status === "closed" || selectedAnswer?.status === "submitted";
+
+  const flushDraftCache = useCallback(() => {
+    if (draftTimerRef.current !== null) {
+      window.clearTimeout(draftTimerRef.current);
+      draftTimerRef.current = null;
+    }
+    const pending = pendingDraftRef.current;
+    if (!pending) return;
+    pendingDraftRef.current = null;
+    writeLocalDraft(draftStorage(), localDraftKey(user.id, pending.questionId), {
+      contentHtml: pending.contentHtml,
+      savedAt: new Date().toISOString(),
+    });
+  }, [user.id]);
+
+  const cacheDraft = useCallback((questionId: number, contentHtml: string) => {
+    pendingDraftRef.current = { questionId, contentHtml };
+    if (draftTimerRef.current !== null) window.clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = window.setTimeout(flushDraftCache, draftCacheDelayMs);
+  }, [flushDraftCache]);
+
+  const dropDraftCache = useCallback((questionId: number) => {
+    if (pendingDraftRef.current?.questionId === questionId) pendingDraftRef.current = null;
+    clearLocalDraft(draftStorage(), localDraftKey(user.id, questionId));
+  }, [user.id]);
+
+  const showRestorePrompt = useCallback((prompt: DraftRestorePrompt | null) => {
+    restorePromptRef.current = prompt;
+    setRestorePrompt(prompt);
+  }, []);
+
+  /** 选中某题时对一次本机缓存和服务端草稿，只有本机更新才打断选手。 */
+  const offerLocalDraft = useCallback((
+    question: CompetitionQuestion | null,
+    answer: ContestantAnswer | null,
+  ) => {
+    if (!question) {
+      showRestorePrompt(null);
+      return;
+    }
+    const draft = draftRestoreOffer({
+      draft: readLocalDraft(draftStorage(), localDraftKey(user.id, question.id)),
+      serverContentHtml: answer?.contentHtml ?? "",
+      answerStatus: answer?.status ?? "not_started",
+      questionStatus: question.status,
+    });
+    showRestorePrompt(draft ? { questionId: question.id, draft } : null);
+  }, [showRestorePrompt, user.id]);
 
   const loadWorkspace = useCallback(async (retainSelection = true) => {
     const result = await apiRequest<{ questions: CompetitionQuestion[]; answers: ContestantAnswer[] }>("/api/competition/contestant/questions");
@@ -77,28 +159,63 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
         dirtyRef.current = false;
         editRevisionRef.current += 1;
         setSaveState(firstAnswer ? "saved" : "idle");
+        offerLocalDraft(firstQuestion ?? null, firstAnswer ?? null);
       })
       .catch((loadError) => setError(loadError instanceof Error ? loadError.message : "题目读取失败"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [offerLocalDraft]);
 
   useEffect(() => {
-    const source = new EventSource("/api/competition/events?role=contestant");
-    source.addEventListener("connected", (event) => {
-      setOnline(true);
-      const data = JSON.parse((event as MessageEvent).data) as { mode?: OperationMode };
-      if (data.mode) setMode(data.mode);
-      void loadWorkspace(true);
-    });
-    source.addEventListener("mode", (event) => {
-      const data = JSON.parse((event as MessageEvent).data) as { mode: OperationMode };
-      setMode(data.mode);
-    });
-    source.addEventListener("question-updated", () => void loadWorkspace(true));
-    source.addEventListener("degraded", () => setOnline(false));
-    source.onerror = () => setOnline(false);
-    source.onopen = () => setOnline(true);
-    return () => source.close();
+    let source: EventSource | null = null;
+    let retryTimer: number | null = null;
+    let attempt = 0;
+    let stopped = false;
+
+    const scheduleReconnect = () => {
+      if (stopped || retryTimer !== null) return;
+      attempt += 1;
+      retryTimer = window.setTimeout(() => {
+        retryTimer = null;
+        connect();
+      }, eventStreamRetryDelayMs(attempt));
+    };
+
+    const connect = () => {
+      if (stopped) return;
+      const stream = new EventSource("/api/competition/events?role=contestant");
+      source = stream;
+      stream.addEventListener("connected", (event) => {
+        attempt = 0;
+        setOnline(true);
+        const data = JSON.parse((event as MessageEvent).data) as { mode?: OperationMode };
+        if (data.mode) setMode(data.mode);
+        void loadWorkspace(true);
+      });
+      stream.addEventListener("mode", (event) => {
+        const data = JSON.parse((event as MessageEvent).data) as { mode: OperationMode };
+        setMode(data.mode);
+      });
+      stream.addEventListener("question-updated", () => void loadWorkspace(true));
+      stream.addEventListener("degraded", () => setOnline(false));
+      stream.onopen = () => {
+        attempt = 0;
+        setOnline(true);
+      };
+      stream.onerror = () => {
+        setOnline(false);
+        // 连接只是断了的话浏览器会自己重连；只有它已经放弃（CLOSED）才需要我们接手。
+        if (stream.readyState !== EventSource.CLOSED) return;
+        stream.close();
+        scheduleReconnect();
+      };
+    };
+
+    connect();
+    return () => {
+      stopped = true;
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
+      source?.close();
+    };
   }, [loadWorkspace, setMode]);
 
   const saveAnswer = useCallback(async (submit: boolean): Promise<boolean> => {
@@ -127,6 +244,7 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
           body: JSON.stringify({ contentHtml: submittedHtml, submit }),
         });
         setAnswers((current) => [result.answer, ...current.filter((answer) => answer.questionId !== questionId)]);
+        dropDraftCache(questionId);
         if (submit) {
           setContentHtml(result.answer.contentHtml);
           contentRef.current = result.answer.contentHtml;
@@ -146,6 +264,7 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
             const workspace = await loadWorkspace(true);
             const persisted = workspace.answers.find((answer) => answer.questionId === questionId);
             if (persisted?.status === "submitted") {
+              dropDraftCache(questionId);
               setContentHtml(persisted.contentHtml);
               contentRef.current = persisted.contentHtml;
               dirtyRef.current = false;
@@ -172,20 +291,27 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
     const succeeded = await savePromise;
     if (savingPromiseRef.current === savePromise) savingPromiseRef.current = null;
     return succeeded;
-  }, [loadWorkspace, selectedId]);
+  }, [dropDraftCache, loadWorkspace, selectedId]);
 
   useEffect(() => {
     const preventUnsavedExit = (event: BeforeUnloadEvent) => {
+      // 关页面前把还在防抖里的内容落到本机缓存，下次进来才恢复得出来。
+      flushDraftCache();
       if (!dirtyRef.current && !savingRef.current && !submittingRef.current) return;
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", preventUnsavedExit);
-    return () => window.removeEventListener("beforeunload", preventUnsavedExit);
-  }, []);
+    return () => {
+      window.removeEventListener("beforeunload", preventUnsavedExit);
+      flushDraftCache();
+    };
+  }, [flushDraftCache]);
 
   function changeContent(html: string) {
     if (submittingRef.current) return;
+    // 横幅还开着就直接改内容，等于选了"丢弃"：本机那份不再有机会覆盖当前编辑。
+    if (restorePromptRef.current) discardLocalDraft();
     setContentHtml(html);
     const previousEmpty = !contentRef.current.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim() && !/<img\b/i.test(contentRef.current);
     const nextEmpty = !html.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim() && !/<img\b/i.test(html);
@@ -195,6 +321,25 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
     dirtyRef.current = true;
     setError(null);
     setSaveState("dirty");
+    if (selectedId !== null) cacheDraft(selectedId, html);
+  }
+
+  function restoreLocalDraft() {
+    const prompt = restorePromptRef.current;
+    if (!prompt || prompt.questionId !== selectedId) return;
+    setContentHtml(prompt.draft.contentHtml);
+    contentRef.current = prompt.draft.contentHtml;
+    editRevisionRef.current += 1;
+    dirtyRef.current = true;
+    setSaveState("dirty");
+    showRestorePrompt(null);
+  }
+
+  function discardLocalDraft() {
+    const prompt = restorePromptRef.current;
+    if (!prompt) return;
+    dropDraftCache(prompt.questionId);
+    showRestorePrompt(null);
   }
 
   async function submitAnswer() {
@@ -205,7 +350,8 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
   async function chooseQuestion(questionId: number) {
     if (questionId === selectedId) return;
     if (savingPromiseRef.current) await savingPromiseRef.current;
-    if (dirtyRef.current && !locked && !window.confirm("当前题目有未保存的修改，切换题目后会丢失，确认切换？")) return;
+    if (dirtyRef.current && !locked && !window.confirm("当前题目有未保存的修改，切换后只留在本机缓存，回到本题时可以选择恢复。确认切换？")) return;
+    flushDraftCache();
     const nextAnswer = answers.find((answer) => answer.questionId === questionId);
     const nextHtml = nextAnswer?.contentHtml ?? "";
     setContentHtml(nextHtml);
@@ -214,11 +360,13 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
     editRevisionRef.current += 1;
     setSaveState(nextAnswer ? "saved" : "idle");
     setSelectedId(questionId);
+    offerLocalDraft(questions.find((question) => question.id === questionId) ?? null, nextAnswer ?? null);
   }
 
   async function logout() {
     if (savingPromiseRef.current) await savingPromiseRef.current;
-    if (dirtyRef.current && !locked && !window.confirm("当前答案有未保存的修改，退出登录后会丢失，确认退出？")) return;
+    if (dirtyRef.current && !locked && !window.confirm("当前答案有未保存的修改，还没有保存到服务器（本机缓存会保留），确认退出？")) return;
+    flushDraftCache();
     dirtyRef.current = false;
     await apiRequest("/api/competition/auth/logout", { method: "POST" }).catch(() => undefined);
     router.replace("/login");
@@ -285,6 +433,19 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
                   </div>
                 </header>
                 {error && <div className="workspace-message error" role="alert">{error}</div>}
+                {restorePrompt && restorePrompt.questionId === selectedId && !locked && (
+                  <div className="draft-restore-banner" role="status">
+                    <History />
+                    <div className="draft-restore-text">
+                      <strong>本机存有一份未保存的答案</strong>
+                      <span>缓存于 {formatCompetitionTime(restorePrompt.draft.savedAt)}，与服务器上的草稿不同。恢复后仍需自己点“保存草稿”或“最终提交”。</span>
+                    </div>
+                    <div className="draft-restore-actions">
+                      <button type="button" className="secondary-action" onClick={discardLocalDraft}><Trash2 />丢弃</button>
+                      <button type="button" className="primary-action" onClick={restoreLocalDraft}><RotateCcw />恢复</button>
+                    </div>
+                  </div>
+                )}
                 {locked && <div className="locked-banner"><LockKeyhole />{submitting ? "正在最终提交，请等待服务器确认" : selectedAnswer?.status === "submitted" ? "答案已最终提交，内容已锁定" : "题目已关闭，不能继续修改答案"}</div>}
                 <RichTextEditor value={contentHtml} onChange={changeContent} purpose="answer" editable={!locked} minHeight={350} />
               </section>

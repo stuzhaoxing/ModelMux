@@ -5,7 +5,7 @@
 ## 当前能力
 
 - Next.js 16 管理控制台与 Node.js 网关运行时，首页为选手答题入口
-- `GET /health`
+- `GET /health`，覆盖网关配置、停服开关和考核数据库连通性；MySQL 连不上时返回 `503` 且 `status` 为 `degraded`
 - `GET /v1/models`
 - `POST /v1/chat/completions`，支持普通响应与 SSE 流式透传
 - `POST /v1/messages`，兼容 Claude Messages API、工具调用与 Claude SSE 流式事件
@@ -14,13 +14,15 @@
 - 管理员一键停止或恢复模型 API，停服状态跨进程重启持久化
 - 测试模式与比赛模式双运行模式，比赛模式解除选手总请求额度，评委端和选手端顶部同步显示当前模式
 - 最近 100 条请求元数据和进程级运行指标
-- 管理员、评委、选手使用三个独立登录入口和三个 HttpOnly 会话 Cookie
+- 管理员使用独立登录入口和独立会话 Cookie；评委和选手共用统一登录页，由账号本身决定进哪一端
 - 评委富文本发布/关闭题目，选手通过 SSE 实时接题、富文本答题、手动保存草稿与最终提交
+- 选手端答案实时写入浏览器 localStorage；刷新或异常退出后若本机内容与服务端草稿不同，会用横幅询问恢复还是丢弃
+- 评委端和选手端的 SSE 通道在服务重启、反代报错后自动退避重连，不需要手动刷新页面
 - 评委实时查看全部选手的未开始、草稿、已提交状态及完整时间记录
 - MySQL 持久化考核数据，图片保存在服务器本地数据目录
 - 选手登录后可查看专属 API URL、API Key、已用/剩余额度、允许模型和调用示例
-- 选手 Playground 支持文本与 Qwen 图片理解测试；调用走同一个网关端点，因此与外部客户端一样受 RPM 限流并在测试模式下扣减总请求额度
-- Docker/Caddy 公网部署与 macOS `launchd` 本地常驻示例
+- 选手 API 文档页内置 Playground，支持文本与 Qwen 图片理解测试；调用走同一个网关端点，因此与外部客户端一样受 RPM 限流并在测试模式下扣减总请求额度
+- 公网实例走 `deploy.sh` 本地构建推送 + systemd + nginx，赛中实例走 macOS `launchd` 常驻；仓库另附 Docker/Caddy 备选方案
 
 选手 API Key 和总请求额度随账号保存在 MySQL；运维客户端 Key、供应商 Key 和路由仍使用环境变量管理。网关调用日志与分钟限流状态保存在进程内存。模型 API 的停服状态和运行模式分别保存在 `MODELMUX_DATA_DIR/gateway-service-state.json` 与 `gateway-operation-mode.json`，考核账号、题目、答卷和时间记录持久化到 MySQL。
 
@@ -34,7 +36,7 @@ cp .env.example .env.local
 pnpm dev
 ```
 
-选手入口为 `http://localhost:1444/contestant/questions`，Playground 为 `http://localhost:1444/contestant/playground`，API 文档为 `http://localhost:1444/contestant/api-docs`，管理员控制台为 `http://localhost:1444/admin`。默认关闭匿名调用；没有有效选手账号或运维 Key 时，网关不会成为开放代理。
+选手入口为 `http://localhost:1444/contestant/questions`，API 文档为 `http://localhost:1444/contestant/api-docs`（Playground 是这个页面里的弹窗），管理员控制台为 `http://localhost:1444/admin`。默认关闭匿名调用；没有有效选手账号或运维 Key 时，网关不会成为开放代理。
 
 管理员总览通过 `MODELMUX_INTERNAL_BASE_URL` 和 `MODELMUX_EXTERNAL_BASE_URL` 显示内网、外网入站端口及完整 API 地址。没有公网入站服务时将外网地址留空，总览会明确显示“未开放”。
 
@@ -42,11 +44,12 @@ pnpm dev
 
 | 入口 | 地址 | 登录保护 |
 | --- | --- | --- |
-| 选手答题端 | `http://localhost:1444/contestant/questions` | 管理员生成的选手账号，Cookie 为 `modelmux_contestant_session` |
-| 评委工作台 | `http://localhost:1444/judge/questions` | 管理员生成的评委账号，Cookie 为 `modelmux_judge_session` |
+| 统一登录页 | `http://localhost:1444/login` | 评委和选手共用；按账号密码判定角色，登录后跳到对应工作台 |
+| 选手答题端 | `http://localhost:1444/contestant/questions` | 管理员生成的选手账号，Cookie 为 `modelmux_competition_session` |
+| 评委工作台 | `http://localhost:1444/judge/questions` | 管理员生成的评委账号，Cookie 为 `modelmux_competition_session` |
 | 管理员控制台 | `http://localhost:1444/admin` | 独立管理密码，Cookie 为 `modelmux_admin_session` |
 
-三个角色的 Cookie 名不同，同一个浏览器可以同时保持三种登录状态，适合在同一台电脑的多个标签页联调。后台页面和 `/api/admin/*` 均强制验证管理员会话；模型 API 另用客户端 API Key，不复用任何网页登录凭据。
+评委和选手共用一个会话 Cookie，因此同一个浏览器同一时刻只能是其中一个身份，后登录的会顶掉先登录的；要同时开两端请用两个浏览器或无痕窗口。管理员 Cookie 与它们相互独立，可以和任意一端同时保持登录。同一个账号名同时存在于评委和选手时，登录页会让本人再选一次角色。后台页面和 `/api/admin/*` 均强制验证管理员会话；模型 API 另用客户端 API Key，不复用任何网页登录凭据。
 
 完整验证：
 
@@ -101,7 +104,7 @@ curl http://localhost:1444/v1/messages \
 
 | 环境 | API 示例 | 运行方式 |
 | --- | --- | --- |
-| 赛前公网 | `https://debug.example.com/v1` | Docker + Caddy + HTTPS |
+| 赛前公网 | `https://debug.example.com/v1` | Next.js standalone + systemd + nginx（HTTPS），用 `./deploy.sh` 从本地构建推送 |
 | 赛中本地 | `http://10.20.0.1:4000/v1` | Next.js standalone + `launchd` |
 
 公网和本地实例分别保存环境变量、密钥和运行日志。开赛前在公网实例的“系统设置”中停止模型 API；管理员后台与 `/health` 保持在线，便于确认和恢复。赛中终端不设置默认网关和 DNS，只能访问 Mac mini 上的江苏省监测技能竞赛在线答题系统。
@@ -132,7 +135,8 @@ app/                 Next.js 页面与 HTTP Route Handlers
 src/                 管理控制台客户端组件与样式
 lib/gateway/         网关配置、鉴权、路由、代理与测试
 lib/competition/     考核数据、双角色鉴权、富文本清洗与实时事件
-deploy/              Caddy、Docker Compose、launchd 示例
-scripts/             本地常驻启动脚本
+deploy/              systemd、nginx、launchd 与 Docker/Caddy 备选示例
+deploy.sh            公网实例的本地构建推送脚本
+scripts/             常驻启动与数据库初始化脚本
 docs/                组网、架构与部署文档
 ```

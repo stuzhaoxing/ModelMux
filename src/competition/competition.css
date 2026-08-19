@@ -632,6 +632,25 @@
 .save-indicator.error { color: #a24343; }
 .locked-banner { gap: 8px; color: #5c666c; background: #f0f2f3; border-bottom: 1px solid #dce1e4; }
 .locked-banner svg { width: 15px; }
+
+.draft-restore-banner {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 13px 11px 18px;
+  color: #835313;
+  background: #fff4df;
+  border-bottom: 1px solid #ecd5ab;
+}
+.draft-restore-banner > svg { flex: none; width: 17px; height: 17px; }
+.draft-restore-text { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+.draft-restore-text strong { font-size: 14px; font-weight: 650; }
+.draft-restore-text span { color: #8e6a34; font-size: 12px; }
+.draft-restore-actions { display: flex; flex: none; gap: 8px; }
+.draft-restore-actions .primary-action,
+.draft-restore-actions .secondary-action { height: 32px; padding: 0 12px; font-size: 12px; }
+.draft-restore-actions .secondary-action { border-color: #e0cba4; background: #fffaf1; }
+.draft-restore-actions .secondary-action:hover { background: #fff; border-color: #d3b985; }
 .answer-editor-panel .rich-editor { border: 0; border-radius: 0 0 5px 5px; }
 .waiting-stage { min-height: calc(100vh - 126px); }
 .waiting-stage svg { width: 29px; height: 29px; margin-bottom: 13px; color: #879198; }

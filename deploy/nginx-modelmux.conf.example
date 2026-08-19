@@ -1,0 +1,45 @@
+# 公网调试实例的 nginx 反向代理参考示例，安装到
+# /etc/nginx/conf.d/modelmux.conf（或 sites-available 再软链）。
+# 应用本身监听 127.0.0.1:4000（.env.local 里的 HOSTNAME/PORT），
+# TLS、限流和大小限制都在这一层做。
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name debug.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name debug.example.com;
+
+    ssl_certificate     /etc/nginx/ssl/debug.example.com.crt;
+    ssl_certificate_key /etc/nginx/ssl/debug.example.com.key;
+
+    # 题目和答案里的图片走同一个域名上传，应用层没有单张大小上限，
+    # 这里是唯一的闸门。模型请求体另有 MODELMUX_MAX_BODY_BYTES 兜底。
+    client_max_body_size 64m;
+
+    location / {
+        proxy_pass http://127.0.0.1:4000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+
+        # 必须关缓冲：/v1/* 的流式响应和考核系统的实时通道都是 SSE，
+        # 一旦被 nginx 攒着不发，选手端会先看到"离线"再看到迟到的题目。
+        proxy_buffering off;
+        proxy_cache off;
+        gzip off;
+
+        # 模型思考时间可能很长，读超时要大于上游最慢的一次响应
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+    }
+}

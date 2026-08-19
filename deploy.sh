@@ -292,6 +292,14 @@ verify() {
             log_info "应用已启动，当前为停服状态 (http=$code, status=suspended)"
             log_warn "如需恢复模型 API，请到 $PUBLIC_URL/admin/settings 打开开关"
             ;;
+        degraded)
+            log_error "应用已启动，但考核数据库不可用 (http=$code, status=degraded)"
+            log_error "健康检查里的 database 字段给出了原因分类："
+            grep -o '"database":{[^}]*}' /tmp/mm-health.json 2>/dev/null || true
+            log_error "请在服务器检查 MySQL 与 $DEPLOY_DIR/.env.local 里的 MODELMUX_DATABASE_URL"
+            rm -f /tmp/mm-health.json
+            exit 1
+            ;;
         *)
             log_error "公网健康检查异常 (http=$code)"
             cat /tmp/mm-health.json 2>/dev/null | head -5
