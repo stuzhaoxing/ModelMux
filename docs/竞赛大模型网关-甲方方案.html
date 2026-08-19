@@ -1,0 +1,3784 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="面向竞赛组织方的大模型统一接入、现场组网与技术保障方案"
+    />
+    <title>竞赛大模型统一接入与现场保障方案</title>
+    <style>
+      :root {
+        --ink: #172126;
+        --muted: #526168;
+        --line: #d9e0e2;
+        --paper: #ffffff;
+        --wash: #f4f7f7;
+        --green: #0f6b52;
+        --green-soft: #e5f3ed;
+        --blue: #16658a;
+        --blue-soft: #e8f2f7;
+        --amber: #9a5a08;
+        --amber-soft: #fff2d8;
+        --red: #9a3c35;
+        --red-soft: #fbeae7;
+        --charcoal: #253238;
+        --display: "Noto Serif SC", "Songti SC", STSong, serif;
+        --body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: var(--body);
+        font-size: 16px;
+        line-height: 1.72;
+        letter-spacing: 0;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      button {
+        font: inherit;
+      }
+
+      .screen-bar {
+        position: sticky;
+        z-index: 20;
+        top: 0;
+        display: flex;
+        min-height: 58px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 10px max(24px, calc((100vw - 1180px) / 2));
+        border-bottom: 1px solid rgba(217, 224, 226, 0.9);
+        background: rgba(255, 255, 255, 0.96);
+        backdrop-filter: blur(14px);
+      }
+
+      .brand {
+        display: flex;
+        min-width: max-content;
+        align-items: center;
+        gap: 10px;
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .brand-mark {
+        display: grid;
+        width: 30px;
+        height: 30px;
+        place-items: center;
+        background: var(--charcoal);
+        color: #fff;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+      }
+
+      .screen-nav {
+        display: flex;
+        align-items: center;
+        gap: 22px;
+        color: var(--muted);
+        font-size: 13px;
+        white-space: nowrap;
+      }
+
+      .screen-nav a {
+        text-decoration: none;
+      }
+
+      .screen-nav a:hover,
+      .screen-nav a:focus-visible {
+        color: var(--green);
+      }
+
+      .print-button {
+        display: inline-flex;
+        min-width: max-content;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border: 1px solid var(--charcoal);
+        border-radius: 4px;
+        background: var(--charcoal);
+        color: #fff;
+        cursor: pointer;
+      }
+
+      .print-button:hover {
+        background: #000;
+      }
+
+      .print-button:focus-visible,
+      a:focus-visible {
+        outline: 3px solid rgba(22, 101, 138, 0.28);
+        outline-offset: 3px;
+      }
+
+      .print-button svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      .container {
+        width: min(1120px, calc(100% - 48px));
+        margin: 0 auto;
+      }
+
+      .hero {
+        padding: 72px 0 56px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .hero-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.55fr) minmax(290px, 0.75fr);
+        gap: 72px;
+        align-items: end;
+      }
+
+      .eyebrow {
+        margin: 0 0 18px;
+        color: var(--green);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        max-width: 800px;
+        margin-bottom: 24px;
+        font-family: var(--display);
+        font-size: 52px;
+        font-weight: 700;
+        line-height: 1.18;
+        letter-spacing: 0;
+      }
+
+      .hero-lead {
+        max-width: 760px;
+        margin-bottom: 0;
+        color: var(--muted);
+        font-size: 20px;
+        line-height: 1.75;
+      }
+
+      .document-meta {
+        border-top: 3px solid var(--charcoal);
+        padding-top: 18px;
+      }
+
+      .document-meta dl {
+        display: grid;
+        grid-template-columns: 78px 1fr;
+        gap: 8px 12px;
+        margin: 0;
+        font-size: 14px;
+      }
+
+      .document-meta dt {
+        color: var(--muted);
+      }
+
+      .document-meta dd {
+        margin: 0;
+        font-weight: 650;
+      }
+
+      .section {
+        padding: 72px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .section.soft {
+        background: var(--wash);
+      }
+
+      .section-heading {
+        display: grid;
+        grid-template-columns: 190px minmax(0, 1fr);
+        gap: 42px;
+        margin-bottom: 40px;
+      }
+
+      .section-kicker {
+        margin: 5px 0 0;
+        color: var(--green);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      h2 {
+        margin-bottom: 14px;
+        font-family: var(--display);
+        font-size: 36px;
+        line-height: 1.3;
+        letter-spacing: 0;
+      }
+
+      .section-heading p:last-child {
+        max-width: 760px;
+        margin-bottom: 0;
+        color: var(--muted);
+        font-size: 17px;
+      }
+
+      .need-equation {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr auto 1fr auto 1.15fr;
+        align-items: stretch;
+        margin-bottom: 28px;
+        border: 1px solid var(--charcoal);
+        background: #fff;
+      }
+
+      .need-equation span {
+        display: grid;
+        min-height: 92px;
+        place-items: center;
+        padding: 18px;
+        text-align: center;
+        font-size: 15px;
+        font-weight: 750;
+        line-height: 1.5;
+      }
+
+      .need-equation i {
+        display: grid;
+        width: 42px;
+        place-items: center;
+        background: var(--wash);
+        color: var(--muted);
+        font-family: var(--display);
+        font-size: 23px;
+        font-style: normal;
+        font-weight: 700;
+      }
+
+      .need-equation .need-equation-answer {
+        background: var(--charcoal);
+        color: #fff;
+        font-size: 18px;
+      }
+
+      .need-comparison {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+      }
+
+      .need-option {
+        display: flex;
+        min-height: 330px;
+        flex-direction: column;
+        border: 1px solid var(--line);
+        border-top: 4px solid var(--red);
+        background: #fff;
+      }
+
+      .need-option.recommended {
+        border-top-color: var(--green);
+      }
+
+      .need-option-header {
+        padding: 22px 24px 16px;
+      }
+
+      .need-option-label {
+        display: block;
+        margin-bottom: 5px;
+        color: var(--red);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .need-option.recommended .need-option-label {
+        color: var(--green);
+      }
+
+      .need-option h3 {
+        margin-bottom: 0;
+        font-family: var(--display);
+        font-size: 24px;
+        line-height: 1.35;
+      }
+
+      .need-list {
+        margin: 0;
+        padding: 0 24px 18px;
+        list-style: none;
+      }
+
+      .need-list li {
+        display: grid;
+        grid-template-columns: 28px 1fr;
+        gap: 10px;
+        align-items: start;
+        padding: 10px 0;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .need-list b {
+        display: grid;
+        width: 24px;
+        height: 24px;
+        place-items: center;
+        border: 1px solid currentColor;
+        color: var(--red);
+        font-size: 12px;
+        line-height: 1;
+      }
+
+      .need-option.recommended .need-list b {
+        color: var(--green);
+      }
+
+      .need-result {
+        margin: auto 0 0;
+        padding: 16px 24px;
+        background: var(--red-soft);
+        color: #762d28;
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .need-option.recommended .need-result {
+        background: var(--green-soft);
+        color: #145640;
+      }
+
+      .need-plain {
+        margin: 24px 0 0;
+        padding-left: 18px;
+        border-left: 4px solid var(--amber);
+        color: var(--muted);
+        font-size: 15px;
+      }
+
+      .need-plain strong {
+        color: var(--ink);
+      }
+
+      .stage-plan {
+        margin-bottom: 32px;
+        border: 1px solid var(--line);
+        background: #fff;
+      }
+
+      .stage-plan-header {
+        display: grid;
+        grid-template-columns: 190px 1fr;
+        gap: 42px;
+        align-items: start;
+        padding: 22px 24px;
+        border-bottom: 1px solid var(--line);
+        background: var(--charcoal);
+        color: #fff;
+      }
+
+      .stage-plan-header > span {
+        color: #9ed2e8;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .stage-plan-header strong {
+        display: block;
+        margin-bottom: 4px;
+        font-family: var(--display);
+        font-size: 22px;
+      }
+
+      .stage-plan-header p {
+        margin: 0;
+        color: #c9d3d6;
+        font-size: 13px;
+      }
+
+      .stage-plan-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 94px minmax(0, 1fr);
+        align-items: stretch;
+      }
+
+      .stage-card {
+        min-width: 0;
+        padding: 24px;
+      }
+
+      .stage-card-header {
+        display: grid;
+        grid-template-columns: 36px 1fr;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 18px;
+      }
+
+      .stage-card-header > b {
+        display: grid;
+        width: 36px;
+        height: 36px;
+        place-items: center;
+        background: var(--blue);
+        color: #fff;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+      }
+
+      .stage-card.event .stage-card-header > b {
+        background: var(--green);
+      }
+
+      .stage-card-header span {
+        display: block;
+        margin-bottom: 2px;
+        color: var(--blue);
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .stage-card.event .stage-card-header span {
+        color: var(--green);
+      }
+
+      .stage-card-header h3 {
+        margin: 0;
+        font-size: 19px;
+      }
+
+      .stage-route {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1.15fr) 24px minmax(0, 1fr);
+        align-items: center;
+        margin-bottom: 16px;
+        padding: 14px;
+        border: 1px solid #b5d4e2;
+        background: var(--blue-soft);
+      }
+
+      .stage-card.event .stage-route {
+        border-color: #acd1c2;
+        background: var(--green-soft);
+      }
+
+      .stage-route span {
+        display: grid;
+        min-height: 56px;
+        place-items: center;
+        padding: 7px;
+        border: 1px solid rgba(22, 101, 138, 0.28);
+        background: #fff;
+        color: var(--ink);
+        text-align: center;
+        font-size: 11px;
+        font-weight: 750;
+        line-height: 1.4;
+      }
+
+      .stage-card.event .stage-route span {
+        border-color: rgba(15, 107, 82, 0.26);
+      }
+
+      .stage-route i {
+        color: var(--blue);
+        text-align: center;
+        font-size: 18px;
+        font-style: normal;
+        font-weight: 800;
+      }
+
+      .stage-card.event .stage-route i {
+        color: var(--green);
+      }
+
+      .stage-points {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .stage-points li {
+        position: relative;
+        padding: 8px 0 8px 18px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .stage-points li::before {
+        position: absolute;
+        top: 15px;
+        left: 1px;
+        width: 6px;
+        height: 6px;
+        background: var(--blue);
+        content: "";
+      }
+
+      .stage-card.event .stage-points li::before {
+        background: var(--green);
+      }
+
+      .stage-transition {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        border-right: 1px solid var(--line);
+        border-left: 1px solid var(--line);
+        background: var(--wash);
+        text-align: center;
+      }
+
+      .stage-transition span {
+        color: var(--muted);
+        font-size: 10px;
+      }
+
+      .stage-transition strong {
+        color: var(--amber);
+        font-size: 12px;
+      }
+
+      .stage-transition i {
+        color: var(--amber);
+        font-family: var(--display);
+        font-size: 28px;
+        font-style: normal;
+      }
+
+      .stage-rule {
+        display: grid;
+        grid-template-columns: 190px 1fr;
+        gap: 42px;
+        padding: 17px 24px;
+        border-top: 1px solid var(--line);
+        background: var(--amber-soft);
+        color: #694b20;
+        font-size: 13px;
+      }
+
+      .stage-rule strong {
+        color: var(--amber);
+      }
+
+      .topology-shell {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        background: #fff;
+      }
+
+      .topology-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 20px 24px;
+        background: var(--charcoal);
+        color: #fff;
+      }
+
+      .topology-header p {
+        margin: 0;
+      }
+
+      .topology-header strong {
+        display: block;
+        margin-bottom: 3px;
+        font-size: 17px;
+      }
+
+      .topology-header span {
+        color: #c9d3d6;
+        font-size: 12px;
+      }
+
+      .topology-legend {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      .legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+      }
+
+      .legend-swatch {
+        width: 22px;
+        height: 3px;
+        background: #67c29d;
+      }
+
+      .legend-swatch.public {
+        background: #75bad9;
+      }
+
+      .topology-canvas {
+        padding: 30px;
+        background: #f7f9f9;
+      }
+
+      .network-map {
+        display: grid;
+        grid-template-columns:
+          minmax(215px, 1fr) 76px minmax(238px, 0.9fr) 76px
+          minmax(215px, 1fr);
+        gap: 0;
+        align-items: stretch;
+      }
+
+      .network-zone {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        padding: 18px;
+        border: 1px solid var(--line);
+        background: #fff;
+      }
+
+      .network-zone.internal {
+        border-color: #acd1c2;
+        background: var(--green-soft);
+      }
+
+      .network-zone.external {
+        border-color: #b5d4e2;
+        background: var(--blue-soft);
+      }
+
+      .zone-heading {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 16px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid rgba(15, 107, 82, 0.26);
+      }
+
+      .external .zone-heading {
+        border-bottom-color: rgba(22, 101, 138, 0.25);
+      }
+
+      .zone-heading strong {
+        font-size: 16px;
+      }
+
+      .zone-heading span {
+        padding: 3px 7px;
+        border: 1px solid currentColor;
+        border-radius: 3px;
+        color: var(--green);
+        font-size: 10px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .external .zone-heading span {
+        color: var(--blue);
+      }
+
+      .diagram-device {
+        position: relative;
+        display: grid;
+        grid-template-columns: 44px minmax(0, 1fr);
+        gap: 12px;
+        align-items: center;
+        min-height: 92px;
+        padding: 14px;
+        border: 1px solid rgba(23, 33, 38, 0.18);
+        border-bottom-color: rgba(23, 33, 38, 0.3);
+        background: linear-gradient(180deg, #ffffff 0%, #eef2f2 100%);
+        box-shadow:
+          0 7px 14px rgba(23, 33, 38, 0.1),
+          inset 0 1px 0 #fff;
+      }
+
+      .device-object {
+        position: relative;
+        display: block;
+        width: 92px;
+        height: 68px;
+      }
+
+      .diagram-device strong {
+        display: block;
+        margin-bottom: 3px;
+        font-size: 15px;
+        line-height: 1.35;
+      }
+
+      .diagram-device small {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.55;
+      }
+
+      .zone-chain {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 30px minmax(0, 1fr);
+        flex: 1;
+        align-items: stretch;
+      }
+
+      .zone-chain .diagram-device {
+        grid-template-columns: 1fr;
+        align-content: center;
+        justify-items: center;
+        min-height: 210px;
+        padding: 34px 8px 14px;
+        text-align: center;
+      }
+
+      .zone-chain .device-object {
+        margin-bottom: 13px;
+      }
+
+      .zone-chain .diagram-device strong {
+        font-size: 13px;
+      }
+
+      .zone-chain .diagram-device small {
+        font-size: 9px;
+      }
+
+      .zone-link {
+        display: grid;
+        place-items: center;
+        color: var(--green);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 21px;
+        font-weight: 800;
+      }
+
+      .zone-link.public {
+        color: var(--blue);
+      }
+
+      .ethernet-cable,
+      .wan-cable {
+        position: relative;
+        display: block;
+        width: 28px;
+        height: 12px;
+      }
+
+      .ethernet-cable i,
+      .wan-cable i {
+        position: absolute;
+        top: 5px;
+        right: 5px;
+        left: 5px;
+        height: 3px;
+        border-top: 1px solid rgba(255, 255, 255, 0.65);
+        background: #187258;
+        box-shadow: 0 2px 2px rgba(23, 33, 38, 0.18);
+      }
+
+      .ethernet-cable::before,
+      .ethernet-cable::after,
+      .wan-cable::before,
+      .wan-cable::after {
+        position: absolute;
+        top: 1px;
+        z-index: 1;
+        width: 7px;
+        height: 10px;
+        border: 1px solid rgba(23, 33, 38, 0.35);
+        background: linear-gradient(180deg, #dce6e1 0%, #92aa9f 100%);
+        box-shadow: inset 0 1px 0 #fff;
+        content: "";
+      }
+
+      .ethernet-cable::before,
+      .wan-cable::before {
+        left: 0;
+      }
+
+      .ethernet-cable::after,
+      .wan-cable::after {
+        right: 0;
+      }
+
+      .ethernet-cable.wide {
+        width: 62px;
+      }
+
+      .wan-cable i {
+        background: var(--blue);
+      }
+
+      .wan-cable::before,
+      .wan-cable::after {
+        border-radius: 50%;
+        background: linear-gradient(180deg, #d8eaf2 0%, #7faec2 100%);
+      }
+
+      .wifi-link-icon {
+        width: 34px;
+        height: 34px;
+        color: var(--blue);
+        filter: drop-shadow(0 3px 2px rgba(22, 101, 138, 0.16));
+      }
+
+      .laptop-object .laptop-screen {
+        position: absolute;
+        width: 58px;
+        height: 39px;
+        border: 4px solid #303b40;
+        border-bottom-width: 6px;
+        border-radius: 5px 5px 2px 2px;
+        background: linear-gradient(145deg, #bfe5dd 0%, #5c9289 100%);
+        box-shadow:
+          inset 0 0 0 1px rgba(255, 255, 255, 0.35),
+          0 6px 8px rgba(23, 33, 38, 0.2);
+      }
+
+      .laptop-object .laptop-screen.back {
+        top: 2px;
+        left: 3px;
+        opacity: 0.68;
+        transform: scale(0.84);
+        transform-origin: bottom left;
+      }
+
+      .laptop-object .laptop-screen.front {
+        top: 7px;
+        left: 19px;
+      }
+
+      .laptop-object .laptop-keyboard {
+        position: absolute;
+        top: 49px;
+        left: 12px;
+        width: 74px;
+        height: 15px;
+        background: linear-gradient(180deg, #e9eeee 0%, #98a5a9 100%);
+        box-shadow: 0 4px 5px rgba(23, 33, 38, 0.25);
+        clip-path: polygon(9% 0, 91% 0, 100% 100%, 0 100%);
+      }
+
+      .laptop-object .laptop-count {
+        position: absolute;
+        top: 0;
+        right: -2px;
+        z-index: 2;
+        padding: 3px 6px;
+        border: 2px solid #fff;
+        border-radius: 999px;
+        background: var(--green);
+        color: #fff;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 10px;
+        font-style: normal;
+        font-weight: 800;
+        box-shadow: 0 3px 5px rgba(23, 33, 38, 0.22);
+      }
+
+      .switch-object .switch-antenna,
+      .router-object .router-antenna {
+        position: absolute;
+        bottom: 36px;
+        width: 4px;
+        height: 30px;
+        border-radius: 3px 3px 0 0;
+        background: linear-gradient(90deg, #1f292d 0%, #657277 48%, #172126 100%);
+        box-shadow: 1px 0 2px rgba(23, 33, 38, 0.2);
+      }
+
+      .switch-object .switch-antenna.left,
+      .router-object .router-antenna.left {
+        left: 12px;
+        transform: rotate(-8deg);
+        transform-origin: bottom;
+      }
+
+      .switch-object .switch-antenna.right,
+      .router-object .router-antenna.right {
+        right: 12px;
+        transform: rotate(8deg);
+        transform-origin: bottom;
+      }
+
+      .switch-object .switch-chassis {
+        position: absolute;
+        right: 2px;
+        bottom: 8px;
+        left: 2px;
+        height: 35px;
+        border: 1px solid #12191c;
+        border-radius: 5px;
+        background: linear-gradient(180deg, #566268 0%, #1d262a 100%);
+        box-shadow:
+          0 7px 8px rgba(23, 33, 38, 0.28),
+          inset 0 1px 0 rgba(255, 255, 255, 0.36);
+      }
+
+      .switch-object .switch-ports {
+        position: absolute;
+        right: 10px;
+        bottom: 18px;
+        left: 10px;
+        height: 11px;
+        border: 2px solid #11181b;
+        background: repeating-linear-gradient(
+          90deg,
+          #090f11 0 7px,
+          #8c9a9e 7px 10px
+        );
+        box-shadow: inset 0 2px 3px #000;
+      }
+
+      .switch-object .switch-leds,
+      .router-object .router-leds {
+        position: absolute;
+        right: 10px;
+        bottom: 31px;
+        width: 24px;
+        height: 3px;
+        background: radial-gradient(circle, #6de0a9 0 2px, transparent 2.5px) 0 0 / 8px 3px repeat-x;
+        filter: drop-shadow(0 0 2px rgba(109, 224, 169, 0.7));
+      }
+
+      .router-object .router-chassis {
+        position: absolute;
+        right: 3px;
+        bottom: 9px;
+        left: 3px;
+        height: 34px;
+        border: 1px solid #89969b;
+        border-radius: 7px 7px 4px 4px;
+        background: linear-gradient(180deg, #f7f9f9 0%, #aeb9bd 100%);
+        box-shadow:
+          0 7px 9px rgba(23, 33, 38, 0.24),
+          inset 0 2px 0 #fff;
+      }
+
+      .router-object .router-slot {
+        position: absolute;
+        right: 14px;
+        bottom: 18px;
+        left: 14px;
+        height: 4px;
+        border-radius: 2px;
+        background: #526168;
+        box-shadow: inset 0 1px 2px #263136;
+      }
+
+      .rack-object {
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        gap: 5px;
+      }
+
+      .rack-object .rack-tower {
+        position: relative;
+        width: 36px;
+        height: 62px;
+        border: 2px solid #263136;
+        border-radius: 3px;
+        background: linear-gradient(90deg, #1d2529 0%, #556269 50%, #20292d 100%);
+        box-shadow:
+          0 7px 8px rgba(23, 33, 38, 0.28),
+          inset 1px 0 0 rgba(255, 255, 255, 0.18);
+      }
+
+      .rack-object .rack-tower::before {
+        position: absolute;
+        inset: 7px 5px;
+        background: repeating-linear-gradient(
+          180deg,
+          #0d1316 0 6px,
+          #718087 6px 7px,
+          #252f34 7px 12px
+        );
+        box-shadow: inset 0 0 4px #000;
+        content: "";
+      }
+
+      .rack-object .rack-tower::after {
+        position: absolute;
+        right: 8px;
+        bottom: 7px;
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: #68c9f0;
+        box-shadow: 0 0 4px #68c9f0;
+        content: "";
+      }
+
+      .topology-step {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        display: grid;
+        width: 22px;
+        height: 22px;
+        place-items: center;
+        background: var(--green);
+        color: #fff;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 10px;
+      }
+
+      .external .topology-step {
+        background: var(--blue);
+      }
+
+      .map-link {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 14px 5px;
+        text-align: center;
+      }
+
+      .map-link strong {
+        color: var(--green);
+        font-size: 11px;
+      }
+
+      .map-link.public strong {
+        color: var(--blue);
+      }
+
+      .map-link small {
+        color: var(--muted);
+        font-size: 9px;
+        line-height: 1.45;
+      }
+
+      .gateway-box {
+        position: relative;
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        border: 2px solid var(--amber);
+        background: #fff;
+      }
+
+      .gateway-step {
+        right: 9px;
+        left: auto;
+        z-index: 1;
+        background: var(--amber);
+      }
+
+      .gateway-title {
+        display: grid;
+        grid-template-columns: 82px minmax(0, 1fr);
+        gap: 14px;
+        align-items: center;
+        padding: 18px;
+        background: var(--amber-soft);
+      }
+
+      .gateway-object {
+        position: relative;
+        display: block;
+        width: 80px;
+        height: 62px;
+      }
+
+      .relay-object .relay-chassis {
+        position: absolute;
+        right: 2px;
+        bottom: 8px;
+        left: 2px;
+        height: 46px;
+        border: 1px solid #161e21;
+        border-radius: 6px;
+        background: linear-gradient(180deg, #657176 0%, #252f33 55%, #151c1f 100%);
+        box-shadow:
+          0 8px 11px rgba(52, 47, 36, 0.3),
+          inset 0 2px 0 rgba(255, 255, 255, 0.28),
+          inset 0 -2px 3px rgba(0, 0, 0, 0.45);
+      }
+
+      .relay-object .relay-chassis::before {
+        position: absolute;
+        top: 10px;
+        bottom: 10px;
+        left: 9px;
+        width: 34px;
+        border: 1px solid #101719;
+        background: repeating-linear-gradient(
+          90deg,
+          #0b1113 0 3px,
+          #606d72 3px 5px
+        );
+        box-shadow: inset 0 1px 3px #000;
+        content: "";
+      }
+
+      .relay-object .relay-drive {
+        position: absolute;
+        right: 11px;
+        bottom: 20px;
+        width: 22px;
+        height: 15px;
+        border: 1px solid #0d1315;
+        border-radius: 2px;
+        background: linear-gradient(180deg, #303b3f 0%, #111719 100%);
+        box-shadow: inset 0 1px 2px #000;
+      }
+
+      .relay-object .relay-light {
+        position: absolute;
+        right: 14px;
+        bottom: 14px;
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: #5bd68c;
+        box-shadow: 0 0 5px #5bd68c;
+      }
+
+      .gateway-title span {
+        display: block;
+        margin-bottom: 2px;
+        color: var(--amber);
+        font-size: 10px;
+        font-weight: 800;
+      }
+
+      .gateway-title strong {
+        display: block;
+        font-size: 18px;
+        line-height: 1.25;
+      }
+
+      .gateway-body {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        justify-content: center;
+        gap: 9px;
+        padding: 15px 18px;
+      }
+
+      .gateway-function {
+        display: grid;
+        grid-template-columns: 7px 1fr;
+        gap: 9px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .gateway-function::before {
+        width: 7px;
+        height: 7px;
+        margin-top: 6px;
+        background: var(--amber);
+        content: "";
+      }
+
+      .gateway-ports {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        border-top: 1px solid var(--line);
+      }
+
+      .gateway-port {
+        padding: 11px 12px;
+        text-align: center;
+      }
+
+      .gateway-port + .gateway-port {
+        border-left: 1px solid var(--line);
+      }
+
+      .gateway-port strong {
+        display: block;
+        color: var(--green);
+        font-size: 11px;
+      }
+
+      .gateway-port.public strong {
+        color: var(--blue);
+      }
+
+      .gateway-port span {
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 9px;
+      }
+
+      .gateway-rule {
+        padding: 9px 12px;
+        background: var(--charcoal);
+        color: #fff;
+        font-size: 10px;
+        font-weight: 750;
+        text-align: center;
+      }
+
+      .blocked-route {
+        display: grid;
+        grid-template-columns: max-content minmax(80px, 1fr) max-content max-content;
+        gap: 14px;
+        align-items: center;
+        margin-top: 22px;
+        padding: 13px 16px;
+        border: 1px solid #ddb7b2;
+        background: var(--red-soft);
+        color: var(--red);
+        font-size: 12px;
+        font-weight: 750;
+      }
+
+      .blocked-line {
+        position: relative;
+        height: 2px;
+        background: #cf8f88;
+      }
+
+      .blocked-line::after {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        display: grid;
+        width: 24px;
+        height: 24px;
+        place-items: center;
+        border: 2px solid var(--red);
+        border-radius: 50%;
+        background: var(--red-soft);
+        content: "×";
+        font-size: 17px;
+        transform: translate(-50%, -50%);
+      }
+
+      .blocked-route strong {
+        padding: 3px 7px;
+        background: var(--red);
+        color: #fff;
+        font-size: 10px;
+        white-space: nowrap;
+      }
+
+      .topology-note {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        border-top: 1px solid var(--line);
+      }
+
+      .topology-note p {
+        margin: 0;
+        padding: 17px 20px;
+        border-right: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .topology-note p:last-child {
+        border-right: 0;
+      }
+
+      .topology-note strong {
+        color: var(--ink);
+      }
+
+      .process-block {
+        margin-top: 40px;
+        padding-top: 32px;
+        border-top: 1px solid var(--line);
+      }
+
+      .process-heading {
+        display: grid;
+        grid-template-columns: 190px 1fr;
+        gap: 42px;
+        margin-bottom: 24px;
+      }
+
+      .process-heading strong {
+        color: var(--green);
+        font-size: 14px;
+      }
+
+      .process-heading p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+      }
+
+      .flow-list {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        border-top: 1px solid var(--line);
+      }
+
+      .flow-step {
+        position: relative;
+        padding: 24px 26px 28px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .flow-step + .flow-step {
+        padding-left: 26px;
+        border-left: 1px solid var(--line);
+      }
+
+      .flow-step b {
+        display: inline-grid;
+        width: 30px;
+        height: 30px;
+        margin-bottom: 16px;
+        place-items: center;
+        background: var(--charcoal);
+        color: #fff;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+      }
+
+      .flow-step h3 {
+        margin-bottom: 9px;
+        font-size: 17px;
+      }
+
+      .flow-step p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .service-list {
+        border-top: 1px solid var(--line);
+      }
+
+      .service-row {
+        display: grid;
+        grid-template-columns: 70px minmax(210px, 0.75fr) minmax(0, 1.75fr);
+        gap: 24px;
+        align-items: start;
+        padding: 24px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .service-no {
+        color: var(--green);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .service-row h3 {
+        margin: 0;
+        font-size: 18px;
+      }
+
+      .service-row p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .boundary-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0;
+        border: 1px solid var(--line);
+      }
+
+      .boundary-column {
+        padding: 28px;
+      }
+
+      .boundary-column + .boundary-column {
+        border-left: 1px solid var(--line);
+      }
+
+      .boundary-column h3 {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 20px;
+        font-size: 19px;
+      }
+
+      .boundary-column h3::before {
+        width: 10px;
+        height: 10px;
+        background: var(--green);
+        content: "";
+      }
+
+      .boundary-column.client h3::before {
+        background: var(--blue);
+      }
+
+      .clean-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .clean-list li {
+        position: relative;
+        padding: 11px 0 11px 26px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .clean-list li::before {
+        position: absolute;
+        top: 18px;
+        left: 2px;
+        width: 7px;
+        height: 7px;
+        background: currentColor;
+        content: "";
+      }
+
+      .optional-callout {
+        display: grid;
+        grid-template-columns: 190px 1fr;
+        gap: 42px;
+        margin-top: 28px;
+        padding: 24px;
+        border-left: 4px solid var(--amber);
+        background: var(--amber-soft);
+      }
+
+      .optional-callout strong {
+        color: var(--amber);
+        font-size: 14px;
+      }
+
+      .optional-callout p {
+        margin: 0;
+        color: #694b20;
+        font-size: 14px;
+      }
+
+      .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        border-top: 1px solid var(--line);
+        border-left: 1px solid var(--line);
+      }
+
+      .feature {
+        min-height: 164px;
+        padding: 22px;
+        border-right: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .feature h3 {
+        margin-bottom: 9px;
+        font-size: 16px;
+      }
+
+      .feature p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .feature .optional {
+        display: inline-block;
+        margin-bottom: 12px;
+        color: var(--amber);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+        border: 1px solid var(--line);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #fff;
+        font-size: 14px;
+      }
+
+      th,
+      td {
+        padding: 16px 18px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: var(--charcoal);
+        color: #fff;
+        font-size: 12px;
+      }
+
+      tbody tr:last-child td {
+        border-bottom: 0;
+      }
+
+      td:first-child {
+        width: 21%;
+        font-weight: 750;
+      }
+
+      td:nth-child(2) {
+        width: 46%;
+      }
+
+      td:last-child {
+        color: var(--muted);
+      }
+
+      .timeline {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        border-top: 3px solid var(--green);
+      }
+
+      .timeline-item {
+        padding: 20px 20px 0 0;
+      }
+
+      .timeline-item + .timeline-item {
+        padding-left: 20px;
+        border-left: 1px solid var(--line);
+      }
+
+      .timeline-item span {
+        color: var(--green);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .timeline-item h3 {
+        margin: 10px 0 8px;
+        font-size: 16px;
+      }
+
+      .timeline-item p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .acceptance-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        border-top: 1px solid var(--line);
+        border-left: 1px solid var(--line);
+      }
+
+      .acceptance-item {
+        display: grid;
+        grid-template-columns: 42px 1fr;
+        gap: 14px;
+        min-height: 126px;
+        padding: 22px;
+        border-right: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .acceptance-item b {
+        display: grid;
+        width: 30px;
+        height: 30px;
+        place-items: center;
+        background: var(--green-soft);
+        color: var(--green);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+      }
+
+      .acceptance-item h3 {
+        margin-bottom: 6px;
+        font-size: 16px;
+      }
+
+      .acceptance-item p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .summary-band {
+        background: var(--charcoal);
+        color: #fff;
+      }
+
+      .summary {
+        display: grid;
+        grid-template-columns: 190px 1fr;
+        gap: 42px;
+        align-items: center;
+        padding: 42px 0;
+      }
+
+      .summary strong {
+        color: #a9dcca;
+        font-size: 14px;
+      }
+
+      .summary p {
+        margin: 0;
+        color: #fff;
+        font-family: var(--display);
+        font-size: 24px;
+        line-height: 1.65;
+      }
+
+      @media (max-width: 980px) {
+        .screen-nav {
+          display: none;
+        }
+
+        .hero-grid,
+        .summary {
+          grid-template-columns: 1fr;
+          gap: 34px;
+        }
+
+        .stage-plan-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .stage-transition {
+          min-height: 78px;
+          border: 0;
+          border-top: 1px solid var(--line);
+          border-bottom: 1px solid var(--line);
+        }
+
+        .stage-transition i {
+          line-height: 0.7;
+          transform: rotate(90deg);
+        }
+
+        h1 {
+          font-size: 44px;
+        }
+
+        .flow-list {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .flow-step:nth-child(3) {
+          border-left: 0;
+        }
+
+        .network-map {
+          grid-template-columns: 1fr;
+        }
+
+        .map-link {
+          min-height: 66px;
+          padding: 8px;
+        }
+
+        .ethernet-cable.wide {
+          transform: rotate(90deg);
+        }
+
+        .topology-header {
+          align-items: flex-start;
+        }
+
+        .topology-note {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .topology-note p:nth-child(2) {
+          border-right: 0;
+        }
+
+        .topology-note p:last-child {
+          grid-column: 1 / -1;
+          border-top: 1px solid var(--line);
+        }
+
+        .service-row {
+          grid-template-columns: 54px minmax(170px, 0.8fr) minmax(0, 1.4fr);
+        }
+
+        .timeline {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .timeline-item {
+          padding: 20px;
+          border-right: 1px solid var(--line);
+          border-bottom: 1px solid var(--line);
+        }
+
+        .timeline-item + .timeline-item {
+          padding-left: 20px;
+          border-left: 0;
+        }
+      }
+
+      @media (max-width: 680px) {
+        body {
+          font-size: 15px;
+        }
+
+        .container {
+          width: min(100% - 32px, 1120px);
+        }
+
+        .screen-bar {
+          padding: 9px 16px;
+        }
+
+        .print-button span {
+          display: none;
+        }
+
+        .hero {
+          padding: 46px 0 38px;
+        }
+
+        h1 {
+          font-size: 36px;
+        }
+
+        .hero-lead {
+          font-size: 17px;
+        }
+
+        .section-heading,
+        .process-heading,
+        .stage-plan-header,
+        .stage-rule,
+        .summary {
+          grid-template-columns: 1fr;
+          gap: 12px;
+        }
+
+        .section {
+          padding: 52px 0;
+        }
+
+        h2 {
+          font-size: 29px;
+        }
+
+        .need-comparison,
+        .flow-list,
+        .topology-note,
+        .timeline,
+        .acceptance-list {
+          grid-template-columns: 1fr;
+        }
+
+        .need-equation {
+          grid-template-columns: 1fr;
+        }
+
+        .need-equation span {
+          min-height: auto;
+          padding: 15px 18px;
+        }
+
+        .need-equation i {
+          width: 100%;
+          height: 30px;
+        }
+
+        .need-equation i:nth-of-type(3) {
+          display: grid;
+        }
+
+        .need-option {
+          min-height: 0;
+        }
+
+        .stage-plan-header,
+        .stage-card,
+        .stage-rule {
+          padding: 18px;
+        }
+
+        .stage-route {
+          grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1.15fr) 18px minmax(0, 1fr);
+          padding: 10px;
+        }
+
+        .stage-route span {
+          min-height: 52px;
+          padding: 5px;
+          font-size: 10px;
+        }
+
+        .flow-step,
+        .flow-step + .flow-step {
+          padding: 22px 0;
+          border-left: 0;
+        }
+
+        .topology-header {
+          flex-direction: column;
+          gap: 14px;
+          padding: 18px;
+        }
+
+        .topology-legend {
+          flex-wrap: wrap;
+          gap: 8px 14px;
+          white-space: normal;
+        }
+
+        .topology-canvas {
+          padding: 14px;
+        }
+
+        .network-zone {
+          padding: 14px;
+        }
+
+        .blocked-route {
+          grid-template-columns: max-content 1fr max-content;
+        }
+
+        .blocked-route strong {
+          grid-column: 1 / -1;
+          justify-self: center;
+        }
+
+        .topology-note p,
+        .topology-note p:nth-child(2),
+        .topology-note p:last-child {
+          grid-column: auto;
+          border-right: 0;
+          border-top: 1px solid var(--line);
+        }
+
+        .service-row {
+          grid-template-columns: 42px 1fr;
+          gap: 10px 14px;
+        }
+
+        .service-row p {
+          grid-column: 2;
+        }
+
+        .timeline-item,
+        .timeline-item + .timeline-item {
+          padding: 20px 0;
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .acceptance-item {
+          min-height: auto;
+        }
+
+        .summary {
+          padding: 36px 0;
+        }
+
+        .summary p {
+          font-size: 20px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+      }
+
+      @page {
+        size: A4;
+        margin: 12mm;
+      }
+
+      @media print {
+        :root {
+          --wash: #f6f7f7;
+        }
+
+        body {
+          font-size: 10pt;
+          line-height: 1.55;
+          print-color-adjust: exact;
+          -webkit-print-color-adjust: exact;
+        }
+
+        .screen-bar {
+          display: none;
+        }
+
+        .container {
+          width: 100%;
+        }
+
+        .hero {
+          padding: 10mm 0 7mm;
+        }
+
+        h1 {
+          font-size: 29pt;
+        }
+
+        h2 {
+          font-size: 21pt;
+        }
+
+        .section {
+          padding: 11mm 0;
+        }
+
+        .section-heading {
+          margin-bottom: 6mm;
+        }
+
+        .topology-canvas {
+          padding: 5mm;
+        }
+
+        .network-zone {
+          padding: 3mm;
+        }
+
+        .diagram-device {
+          min-height: 22mm;
+          padding: 2.5mm;
+        }
+
+        .gateway-title {
+          padding: 3mm;
+        }
+
+        .need-equation,
+        .need-comparison,
+        .stage-plan,
+        .topology-shell,
+        .flow-list,
+        .service-row,
+        .timeline,
+        .acceptance-list,
+        .summary-band {
+          break-inside: avoid;
+        }
+
+      }
+
+      /* Word-style document view */
+      :root {
+        --ink: #202124;
+        --muted: #5f6368;
+        --line: #d6d9de;
+        --paper: #ffffff;
+        --wash: #f3f3f3;
+        --green: #28724f;
+        --green-soft: #edf6f0;
+        --blue: #2b579a;
+        --blue-soft: #edf3fb;
+        --amber: #986515;
+        --amber-soft: #fff8e7;
+        --red: #a43b35;
+        --red-soft: #fdf0ef;
+        --charcoal: #262626;
+        --display: "Microsoft YaHei", "PingFang SC", sans-serif;
+        --body: "Songti SC", SimSun, "Times New Roman", serif;
+        --utility: Aptos, Calibri, "Microsoft YaHei", "PingFang SC", sans-serif;
+      }
+
+      html {
+        scroll-padding-top: 88px;
+      }
+
+      body {
+        background: #e9eaec;
+        color: var(--ink);
+        font-family: var(--body);
+        font-size: 15px;
+        line-height: 1.8;
+      }
+
+      .screen-bar {
+        min-height: 52px;
+        padding: 7px max(18px, calc((100vw - 1180px) / 2));
+        border-bottom: 1px solid #0f4387;
+        background: #185abd;
+        color: #fff;
+        font-family: var(--utility);
+        box-shadow: 0 1px 5px rgba(0, 0, 0, 0.18);
+        backdrop-filter: none;
+      }
+
+      .brand {
+        gap: 11px;
+        font-size: 13px;
+      }
+
+      .brand-mark {
+        width: 32px;
+        height: 32px;
+        border: 1px solid rgba(255, 255, 255, 0.55);
+        background: #fff;
+        color: #185abd;
+        font-family: Georgia, serif;
+        font-size: 20px;
+        font-weight: 700;
+      }
+
+      .brand-copy {
+        display: flex;
+        flex-direction: column;
+        line-height: 1.25;
+      }
+
+      .brand-copy strong {
+        font-size: 13px;
+        font-weight: 650;
+      }
+
+      .brand-copy small {
+        color: rgba(255, 255, 255, 0.72);
+        font-size: 10px;
+        font-weight: 400;
+      }
+
+      .screen-nav {
+        gap: 4px;
+        color: rgba(255, 255, 255, 0.88);
+        font-size: 12px;
+      }
+
+      .screen-nav a {
+        padding: 8px 10px;
+        border-bottom: 2px solid transparent;
+      }
+
+      .screen-nav a:hover,
+      .screen-nav a:focus-visible {
+        border-bottom-color: #fff;
+        color: #fff;
+      }
+
+      .print-button {
+        padding: 7px 11px;
+        border: 1px solid rgba(255, 255, 255, 0.65);
+        border-radius: 2px;
+        background: transparent;
+        font-family: var(--utility);
+        font-size: 12px;
+      }
+
+      .print-button:hover {
+        border-color: #fff;
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      .document-shell {
+        width: min(210mm, calc(100% - 32px));
+        margin: 28px auto 48px;
+        background: var(--paper);
+        box-shadow:
+          0 1px 2px rgba(0, 0, 0, 0.18),
+          0 7px 24px rgba(0, 0, 0, 0.12);
+      }
+
+      .container {
+        width: 100%;
+        margin: 0;
+      }
+
+      .hero {
+        padding: 25mm 22mm 20mm;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .hero-grid {
+        display: block;
+      }
+
+      .hero-grid > div:first-child {
+        text-align: center;
+      }
+
+      .eyebrow {
+        margin-bottom: 16px;
+        color: var(--blue);
+        font-family: var(--utility);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      h1 {
+        max-width: 100%;
+        margin-bottom: 20px;
+        color: #1f1f1f;
+        font-size: 36px;
+        font-weight: 700;
+        line-height: 1.38;
+      }
+
+      .hero-lead {
+        max-width: 100%;
+        margin: 0 auto;
+        color: #404040;
+        font-size: 16px;
+        line-height: 1.9;
+        text-align: justify;
+      }
+
+      .document-meta {
+        margin-top: 48px;
+        padding-top: 0;
+        border: 1px solid var(--line);
+        border-top: 3px solid var(--blue);
+      }
+
+      .document-meta dl {
+        grid-template-columns: 86px 1fr;
+        gap: 0;
+        font-size: 13px;
+      }
+
+      .document-meta dt,
+      .document-meta dd {
+        min-height: 38px;
+        padding: 7px 12px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .document-meta dt:nth-last-of-type(1),
+      .document-meta dd:last-child {
+        border-bottom: 0;
+      }
+
+      .document-meta dt {
+        background: #f5f6f7;
+        color: #4a4a4a;
+        font-family: var(--utility);
+      }
+
+      .document-meta dd {
+        border-left: 1px solid var(--line);
+        font-weight: 400;
+      }
+
+      .section {
+        padding: 17mm 22mm;
+        border-bottom: 1px solid #e3e3e3;
+        background: #fff;
+      }
+
+      .section.soft {
+        background: #fff;
+      }
+
+      .section-heading {
+        display: block;
+        margin-bottom: 28px;
+      }
+
+      .section-kicker {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 0 0 9px;
+        color: var(--blue);
+        font-family: var(--utility);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .section-kicker::after {
+        height: 1px;
+        flex: 1;
+        background: #b8c8df;
+        content: "";
+      }
+
+      h2 {
+        margin-bottom: 12px;
+        color: #1f1f1f;
+        font-size: 25px;
+        font-weight: 700;
+        line-height: 1.55;
+      }
+
+      h3 {
+        color: #202124;
+        font-family: var(--display);
+      }
+
+      .section-heading p:last-child {
+        max-width: none;
+        color: #3f3f3f;
+        font-size: 15px;
+        line-height: 1.85;
+        text-align: justify;
+      }
+
+      .need-equation {
+        grid-template-columns: 1fr 32px 1fr 32px 1fr 32px 1.15fr;
+        margin-bottom: 22px;
+        border-color: #aeb4bc;
+      }
+
+      .need-equation span {
+        min-height: 72px;
+        padding: 12px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .need-equation i {
+        width: 32px;
+        background: #f3f4f6;
+        font-size: 18px;
+      }
+
+      .need-equation .need-equation-answer {
+        background: var(--blue);
+        font-size: 14px;
+      }
+
+      .need-comparison {
+        gap: 16px;
+      }
+
+      .need-option {
+        min-height: 0;
+        border-top-width: 3px;
+      }
+
+      .need-option-header {
+        padding: 17px 18px 12px;
+      }
+
+      .need-option h3 {
+        font-size: 18px;
+      }
+
+      .need-list {
+        padding: 0 18px 12px;
+      }
+
+      .need-list li {
+        grid-template-columns: 22px 1fr;
+        gap: 8px;
+        padding: 8px 0;
+        color: #444;
+        font-size: 12px;
+      }
+
+      .need-list b {
+        width: 20px;
+        height: 20px;
+        font-family: var(--utility);
+        font-size: 10px;
+      }
+
+      .need-result {
+        padding: 12px 18px;
+        font-size: 12px;
+      }
+
+      .background-faq-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px 18px;
+        align-items: baseline;
+        margin-top: 18px;
+        font-family: var(--utility);
+        font-size: 13px;
+      }
+
+      .background-faq-links span {
+        color: var(--muted);
+        font-weight: 700;
+      }
+
+      .background-faq-links a {
+        color: var(--blue);
+        text-decoration: underline;
+        text-decoration-thickness: 1px;
+        text-underline-offset: 3px;
+      }
+
+      .background-faq-links a:hover {
+        color: #17417e;
+      }
+
+      .need-plain {
+        margin-top: 20px;
+        padding: 12px 15px;
+        border: 0;
+        border-left: 3px solid var(--amber);
+        background: var(--amber-soft);
+        color: #4a4132;
+        font-size: 13px;
+      }
+
+      .stage-plan,
+      .topology-shell {
+        margin-bottom: 26px;
+        border-color: #b8bec5;
+      }
+
+      .stage-commitment {
+        margin: -6px 0 26px;
+        padding: 14px 18px;
+        border: 1px solid #b8c8df;
+        border-left: 4px solid var(--blue);
+        background: var(--blue-soft);
+        color: #30343a;
+        font-size: 14px;
+        line-height: 1.8;
+      }
+
+      .stage-commitment strong {
+        color: var(--blue);
+        font-family: var(--display);
+      }
+
+      .stage-plan-header,
+      .topology-header {
+        background: var(--blue);
+      }
+
+      .stage-plan-header {
+        grid-template-columns: 112px 1fr;
+        gap: 20px;
+        padding: 16px 18px;
+      }
+
+      .stage-plan-header strong {
+        font-size: 17px;
+      }
+
+      .stage-plan-header p {
+        font-size: 11px;
+      }
+
+      .stage-plan-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .stage-card {
+        padding: 18px;
+      }
+
+      .stage-card + .stage-card {
+        border-top: 1px solid var(--line);
+      }
+
+      .stage-transition {
+        min-height: 62px;
+        border: 0;
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .stage-transition i {
+        line-height: 0.7;
+        transform: rotate(90deg);
+      }
+
+      .stage-rule {
+        grid-template-columns: 112px 1fr;
+        gap: 20px;
+        padding: 13px 18px;
+      }
+
+      .topology-header {
+        padding: 16px 18px;
+      }
+
+      .topology-canvas {
+        padding: 18px;
+        background: #f5f6f7;
+      }
+
+      .network-map {
+        grid-template-columns: 1fr;
+      }
+
+      .map-link {
+        min-height: 62px;
+        padding: 8px;
+      }
+
+      .ethernet-cable.wide {
+        transform: rotate(90deg);
+      }
+
+      .diagram-device {
+        box-shadow: none;
+      }
+
+      .gateway-box {
+        border-color: var(--amber);
+      }
+
+      .topology-note {
+        grid-template-columns: 1fr;
+      }
+
+      .topology-note p,
+      .topology-note p:nth-child(2),
+      .topology-note p:last-child {
+        grid-column: auto;
+        border-right: 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .process-heading {
+        grid-template-columns: 112px 1fr;
+        gap: 20px;
+      }
+
+      .flow-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .flow-step,
+      .flow-step + .flow-step {
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-top: 0;
+      }
+
+      .flow-step:nth-child(even) {
+        border-left: 0;
+      }
+
+      .flow-step b {
+        background: var(--blue);
+        font-family: var(--utility);
+      }
+
+      .service-row {
+        grid-template-columns: 44px 175px minmax(0, 1fr);
+        gap: 16px;
+        padding: 18px 0;
+      }
+
+      .service-no {
+        color: var(--blue);
+        font-family: var(--utility);
+      }
+
+      .service-row h3 {
+        font-size: 15px;
+      }
+
+      .service-row p {
+        color: #444;
+        font-size: 13px;
+      }
+
+      .timeline {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        border-top: 2px solid var(--blue);
+        border-left: 1px solid var(--line);
+      }
+
+      .timeline-item,
+      .timeline-item + .timeline-item {
+        padding: 17px;
+        border-right: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+        border-left: 0;
+      }
+
+      .timeline-item span {
+        color: var(--blue);
+        font-family: var(--utility);
+      }
+
+      .acceptance-item {
+        min-height: 118px;
+        padding: 17px;
+      }
+
+      .acceptance-item b {
+        background: var(--blue-soft);
+        color: var(--blue);
+        font-family: var(--utility);
+      }
+
+      .summary-band {
+        border-top: 2px solid var(--blue);
+        border-bottom: 1px solid #b8c8df;
+        background: var(--blue-soft);
+        color: var(--ink);
+      }
+
+      .summary {
+        grid-template-columns: 112px 1fr;
+        gap: 20px;
+        padding: 26px 22mm;
+      }
+
+      .summary strong {
+        color: var(--blue);
+        font-family: var(--utility);
+      }
+
+      .summary p {
+        color: var(--ink);
+        font-family: var(--body);
+        font-size: 17px;
+        line-height: 1.75;
+      }
+
+      .appendix-section {
+        padding-top: 15mm;
+      }
+
+      .appendix-lead {
+        margin-bottom: 26px;
+        padding: 16px 18px;
+        border: 1px solid #b8c8df;
+        border-left: 4px solid var(--blue);
+        background: var(--blue-soft);
+      }
+
+      .appendix-lead strong {
+        display: block;
+        margin-bottom: 5px;
+        color: var(--blue);
+        font-family: var(--display);
+        font-size: 16px;
+      }
+
+      .appendix-lead p {
+        margin: 0;
+        color: #30343a;
+        font-size: 14px;
+      }
+
+      .appendix-block + .appendix-block {
+        margin-top: 34px;
+      }
+
+      .appendix-block {
+        scroll-margin-top: 88px;
+      }
+
+      .appendix-title {
+        margin-bottom: 14px;
+        padding-bottom: 7px;
+        border-bottom: 1px solid var(--line);
+        font-size: 18px;
+      }
+
+      .appendix-title span {
+        margin-right: 7px;
+        color: var(--blue);
+        font-family: var(--utility);
+        font-size: 12px;
+      }
+
+      .knowledge-summary {
+        margin: 14px 0 20px;
+        padding: 15px 17px;
+        border-left: 4px solid var(--blue);
+        background: var(--blue-soft);
+        color: #3f4b5a;
+        font-size: 13px;
+      }
+
+      .knowledge-summary strong {
+        display: block;
+        margin-bottom: 5px;
+        color: var(--blue);
+        font-family: var(--display);
+        font-size: 15px;
+      }
+
+      .knowledge-explanation {
+        border-top: 1px solid var(--line);
+      }
+
+      .knowledge-row {
+        display: grid;
+        grid-template-columns: 42px 210px minmax(0, 1fr);
+        gap: 14px;
+        align-items: start;
+        padding: 16px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .knowledge-row > span {
+        color: var(--blue);
+        font-family: var(--utility);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .knowledge-row h4 {
+        margin: 0;
+        font-family: var(--display);
+        font-size: 14px;
+        line-height: 1.55;
+      }
+
+      .knowledge-row p {
+        margin: 0;
+        color: #4a4a4a;
+        font-size: 13px;
+      }
+
+      .software-figure {
+        aspect-ratio: 1229 / 870;
+        margin: 0 0 24px;
+        overflow: hidden;
+        border: 1px solid #b8bec5;
+        break-inside: avoid;
+      }
+
+      .software-figure img {
+        display: block;
+        width: 117.17%;
+        max-width: none;
+        height: auto;
+        transform: translate(-14.65%, -3.33%);
+        background: #f3f5f7;
+      }
+
+      .plain-table {
+        width: 100%;
+        border: 1px solid #b8bec5;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+
+      .plain-table th,
+      .plain-table td {
+        padding: 11px 12px;
+        border-right: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+        color: #3f3f3f;
+        vertical-align: top;
+      }
+
+      .plain-table th {
+        background: #e9eef6;
+        color: #27384f;
+        font-family: var(--utility);
+        font-weight: 700;
+      }
+
+      .plain-table td:first-child {
+        width: 19%;
+        font-weight: 700;
+      }
+
+      .plain-table td:nth-child(2) {
+        width: 42%;
+      }
+
+      .plain-table td:last-child {
+        color: #3f3f3f;
+      }
+
+      .control-list {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        border-top: 1px solid var(--line);
+        border-left: 1px solid var(--line);
+      }
+
+      .control-item {
+        padding: 16px;
+        border-right: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .control-item > span {
+        display: inline-block;
+        margin-bottom: 9px;
+        color: var(--blue);
+        font-family: var(--utility);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .control-item h4 {
+        margin: 0 0 7px;
+        font-family: var(--display);
+        font-size: 14px;
+      }
+
+      .control-item p {
+        margin: 0;
+        color: #4a4a4a;
+        font-size: 12px;
+      }
+
+      .toc-section {
+        min-height: 245mm;
+        padding-top: 18mm;
+        padding-bottom: 18mm;
+      }
+
+      .toc-list {
+        display: block;
+        margin-top: 34px;
+      }
+
+      .toc-list a {
+        display: flex;
+        min-height: 48px;
+        gap: 12px;
+        align-items: center;
+        padding: 7px 2px;
+        text-decoration: none;
+      }
+
+      .toc-list a:hover,
+      .toc-list a:focus-visible {
+        color: var(--blue);
+      }
+
+      .toc-list > a > span {
+        width: 42px;
+        flex: 0 0 42px;
+        color: var(--blue);
+        font-family: var(--utility);
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .toc-list strong {
+        flex: 0 1 auto;
+        color: #262626;
+        font-family: var(--display);
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      .toc-list a::after {
+        min-width: 20px;
+        flex: 1;
+        align-self: center;
+        border-bottom: 1px dotted #9ba4ae;
+        content: "";
+      }
+
+      .toc-group {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin: 0 0 5px;
+        color: #555;
+        font-family: var(--utility);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .toc-group::after {
+        height: 1px;
+        flex: 1;
+        background: #d7dce2;
+        content: "";
+      }
+
+      .toc-group.appendix {
+        margin-top: 28px;
+      }
+
+      .plan-window {
+        display: block;
+        margin-bottom: 7px;
+        color: #666;
+        font-family: var(--utility);
+        font-size: 10px;
+      }
+
+      .timeline-item strong {
+        display: block;
+        margin-top: 9px;
+        color: var(--blue);
+        font-family: var(--utility);
+        font-size: 10px;
+      }
+
+      .timeline-item:last-child:nth-child(odd) {
+        grid-column: 1 / -1;
+      }
+
+      .commitment-band {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        margin-bottom: 22px;
+        border-top: 2px solid var(--blue);
+        border-left: 1px solid #b8c8df;
+      }
+
+      .commitment-item {
+        min-height: 116px;
+        padding: 17px 18px;
+        border-right: 1px solid #b8c8df;
+        border-bottom: 1px solid #b8c8df;
+        background: var(--blue-soft);
+      }
+
+      .commitment-item span {
+        display: block;
+        margin-bottom: 5px;
+        color: var(--blue);
+        font-family: var(--utility);
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      .commitment-item strong {
+        display: block;
+        margin-bottom: 5px;
+        font-family: var(--display);
+        font-size: 17px;
+      }
+
+      .commitment-item p {
+        margin: 0;
+        color: #444;
+        font-size: 12px;
+      }
+
+      .responsibility-note {
+        margin: 16px 0 0;
+        padding: 12px 15px;
+        border-left: 3px solid var(--blue);
+        background: #f6f8fb;
+        color: #444;
+        font-size: 12px;
+      }
+
+      .responsibility-note strong {
+        color: var(--blue);
+      }
+
+      @media (max-width: 760px) {
+        html {
+          scroll-padding-top: 56px;
+        }
+
+        .screen-bar {
+          padding: 7px 12px;
+        }
+
+        .brand-copy small,
+        .screen-nav {
+          display: none;
+        }
+
+        .document-shell {
+          width: 100%;
+          margin: 0;
+          box-shadow: none;
+        }
+
+        .hero,
+        .section {
+          padding: 38px 22px;
+        }
+
+        h1 {
+          font-size: 29px;
+        }
+
+        h2 {
+          font-size: 22px;
+        }
+
+        .document-meta {
+          margin-top: 34px;
+        }
+
+        .need-comparison,
+        .flow-list,
+        .timeline,
+        .acceptance-list,
+        .control-list,
+        .commitment-band {
+          grid-template-columns: 1fr;
+        }
+
+        .toc-section {
+          min-height: 0;
+        }
+
+        .toc-list {
+          margin-top: 24px;
+        }
+
+        .toc-list a {
+          min-height: 44px;
+        }
+
+        .toc-list > a > span {
+          width: 36px;
+          flex-basis: 36px;
+        }
+
+        .toc-list strong {
+          font-size: 15px;
+        }
+
+        .need-equation {
+          grid-template-columns: 1fr;
+        }
+
+        .need-equation i {
+          width: 100%;
+          height: 28px;
+        }
+
+        .need-equation span {
+          min-height: 52px;
+        }
+
+        .flow-step:nth-child(even) {
+          border-left: 1px solid var(--line);
+        }
+
+        .service-row {
+          grid-template-columns: 34px 1fr;
+          gap: 7px 11px;
+        }
+
+        .service-row p {
+          grid-column: 2;
+        }
+
+        .summary {
+          grid-template-columns: 1fr;
+          gap: 6px;
+          padding: 24px 22px;
+        }
+
+        .knowledge-row {
+          grid-template-columns: 1fr;
+          gap: 6px;
+        }
+
+        .plain-table {
+          min-width: 620px;
+        }
+      }
+
+      @media print {
+        body {
+          background: #fff;
+          font-size: 10pt;
+        }
+
+        .document-shell {
+          width: auto;
+          margin: 0;
+          box-shadow: none;
+        }
+
+        .hero {
+          padding: 12mm 0 10mm;
+        }
+
+        .section {
+          padding: 9mm 0;
+        }
+
+        .toc-section {
+          min-height: 0;
+          padding: 4mm 0 6mm;
+        }
+
+        .toc-list {
+          margin-top: 3mm;
+        }
+
+        .toc-list a {
+          min-height: 9mm;
+          padding: 1mm 2px;
+        }
+
+        .toc-group {
+          margin-bottom: 1mm;
+        }
+
+        .summary {
+          padding: 6mm 0;
+        }
+
+        #background,
+        #interface-debug,
+        #equipment-debug,
+        #event-support,
+        #resources,
+        #faq,
+        #software-development {
+          break-before: page;
+        }
+
+        #interface-debug .stage-plan {
+          break-inside: avoid;
+        }
+
+        #interface-debug .stage-plan-header {
+          grid-template-columns: 88px minmax(0, 1fr);
+          gap: 10px;
+          padding: 10px 12px;
+        }
+
+        #interface-debug .stage-plan-header strong {
+          font-size: 13px;
+        }
+
+        #interface-debug .stage-plan-header p {
+          font-size: 8px;
+        }
+
+        #interface-debug .stage-plan-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        #interface-debug .stage-card,
+        #interface-debug .stage-card + .stage-card {
+          padding: 10px 11px;
+          border-top: 0;
+        }
+
+        #interface-debug .stage-card + .stage-card {
+          border-left: 1px solid var(--line);
+        }
+
+        #interface-debug .stage-card-header {
+          grid-template-columns: 28px minmax(0, 1fr);
+          gap: 7px;
+          margin-bottom: 7px;
+        }
+
+        #interface-debug .stage-card-header > b {
+          width: 28px;
+          height: 28px;
+          font-size: 9px;
+        }
+
+        #interface-debug .stage-card-header span {
+          font-size: 8px;
+        }
+
+        #interface-debug .stage-card-header h3 {
+          font-size: 13px;
+        }
+
+        #interface-debug .stage-route {
+          grid-template-columns: minmax(0, 1fr) 10px minmax(0, 1.1fr) 10px minmax(0, 1fr);
+          margin-bottom: 6px;
+          padding: 6px;
+        }
+
+        #interface-debug .stage-route span {
+          min-height: 36px;
+          padding: 3px;
+          font-size: 7px;
+        }
+
+        #interface-debug .stage-route i {
+          font-size: 10px;
+        }
+
+        #interface-debug .stage-points li {
+          padding: 4px 0 4px 12px;
+          font-size: 8px;
+        }
+
+        #interface-debug .stage-points li::before {
+          top: 9px;
+          width: 4px;
+          height: 4px;
+        }
+
+        #interface-debug .stage-rule {
+          grid-template-columns: 82px minmax(0, 1fr);
+          gap: 8px;
+          padding: 7px 10px;
+          font-size: 8px;
+        }
+
+        #equipment-debug .topology-shell {
+          break-inside: auto;
+        }
+
+        #event-support .timeline {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        #event-support .timeline-item,
+        #event-support .timeline-item + .timeline-item {
+          padding: 10px 12px;
+          border-right: 1px solid var(--line);
+          border-bottom: 1px solid var(--line);
+        }
+
+        #event-support .responsibility-note {
+          break-inside: avoid;
+        }
+
+        #software-development .software-figure {
+          break-inside: avoid;
+        }
+
+        #software-development .software-figure {
+          break-before: auto;
+        }
+
+        #software-development .software-figure + .software-figure {
+          break-before: page;
+        }
+
+        .appendix-block,
+        .plain-table,
+        .control-list,
+        .toc-list,
+        .commitment-band {
+          break-inside: avoid;
+        }
+
+        h1 {
+          font-size: 25pt;
+        }
+
+        h2 {
+          font-size: 18pt;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="screen-bar" aria-label="方案导航">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">W</span>
+        <span class="brand-copy">
+          <strong>竞赛大模型服务保障方案</strong>
+          <small>文档阅读视图</small>
+        </span>
+      </div>
+      <nav class="screen-nav" aria-label="页内导航">
+        <a href="#contents">目录</a>
+        <a href="#background">项目背景</a>
+        <a href="#interface-debug">赛前接口联调</a>
+        <a href="#equipment-debug">设备部署联调</a>
+        <a href="#event-support">运行保障</a>
+        <a href="#resources">设备与费用</a>
+        <a href="#faq">知识库与大模型</a>
+        <a href="#software-development">定制软件开发</a>
+      </nav>
+      <button class="print-button" type="button" onclick="window.print()" title="打印或导出 PDF">
+        <svg
+          aria-hidden="true"
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M6 9V2h12v7" />
+          <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+          <rect width="12" height="8" x="6" y="14" />
+        </svg>
+        <span>打印 / 导出 PDF</span>
+      </button>
+    </header>
+
+    <div class="document-shell">
+    <main>
+      <section class="hero">
+        <div class="container hero-grid">
+          <div>
+            <p class="eyebrow">竞赛大模型服务保障方案</p>
+            <h1>竞赛大模型统一接入与现场保障方案</h1>
+            <p class="hero-lead">
+              面向约 20 名参赛选手，通过统一网关接入云端大模型，避免在比赛现场部署高成本的大模型算力服务器，并为选手提供简单、统一的调用方式。赛事仅开放有限的指定国产模型，使所有选手在相同的模型条件下参赛。
+            </p>
+          </div>
+          <aside class="document-meta" aria-label="文档信息">
+            <dl>
+              <dt>建设对象</dt>
+              <dd>约 20 名参赛选手</dd>
+              <dt>建设目标</dt>
+              <dd>方便调用、统一条件</dd>
+              <dt>部署方式</dt>
+              <dd>赛前公网服务、赛中本地中继</dd>
+              <dt>保障范围</dt>
+              <dd>接口调试、现场演练、赛事保障</dd>
+              <dt>方案日期</dt>
+              <dd>2026 年 8 月 12 日</dd>
+            </dl>
+          </aside>
+        </div>
+      </section>
+
+      <section class="section toc-section" id="contents">
+        <div class="container">
+          <div class="section-heading">
+            <p class="section-kicker">目录</p>
+            <div>
+              <h2>文档目录</h2>
+            </div>
+          </div>
+          <nav class="toc-list" aria-label="文档目录">
+            <p class="toc-group">正文</p>
+            <a href="#background"><span>01</span><strong>项目背景</strong></a>
+            <a href="#interface-debug"><span>02</span><strong>赛前接口联调</strong></a>
+            <a href="#equipment-debug"><span>03</span><strong>赛前设备部署与联调</strong></a>
+            <a href="#event-support"><span>04</span><strong>赛事现场运行保障</strong></a>
+            <p class="toc-group appendix">附录</p>
+            <a href="#resources"><span>A</span><strong>现场设备与费用承担</strong></a>
+            <a href="#faq"><span>B</span><strong>知识库与大语言模型的关系</strong></a>
+            <a href="#software-development"><span>C</span><strong>中继服务器定制软件开发</strong></a>
+          </nav>
+        </div>
+      </section>
+
+      <section class="section" id="background">
+        <div class="container">
+          <div class="section-heading">
+            <p class="section-kicker">01 / 项目背景</p>
+            <div>
+              <h2>现场部署大模型成本过高，统一云端接入更方便选手</h2>
+              <p>
+                本次竞赛需要向约 20 名选手提供大模型能力。如在比赛现场直接部署和运行大模型，需要投入高性能 GPU 算力服务器，设备、部署和运维成本较高。本方案不在现场运行大模型，而是由轻量中继服务器统一调用云端模型，选手只需按统一接口说明调用，即可在赛前完成开发联调并在比赛现场继续使用。为保障竞赛公平，网关仅开放赛事指定的有限国产模型，统一模型名称、版本和调用条件。
+              </p>
+            </div>
+          </div>
+
+          <div class="need-comparison">
+            <article class="need-option">
+              <div class="need-option-header">
+                <span class="need-option-label">现场自建大模型服务</span>
+                <h3>设备和运行成本过高</h3>
+              </div>
+              <ul class="need-list">
+                <li><b aria-hidden="true">1</b><span>需要采购高性能 GPU 算力服务器</span></li>
+                <li><b aria-hidden="true">2</b><span>大模型部署、调优和现场运维工作量大</span></li>
+                <li><b aria-hidden="true">3</b><span>为短期赛事投入重型算力，设备利用率低</span></li>
+              </ul>
+              <p class="need-result">短期使用成本高，不适合本次竞赛。</p>
+            </article>
+
+            <article class="need-option recommended">
+              <div class="need-option-header">
+                <span class="need-option-label">通过统一网关接入</span>
+                <h3>使用方便，参赛条件统一</h3>
+              </div>
+              <ul class="need-list">
+                <li><b aria-hidden="true">1</b><span>无需在现场配置高性能模型算力服务器</span></li>
+                <li><b aria-hidden="true">2</b><span>选手按统一接口调用，无需配置平台账号和密钥</span></li>
+                <li><b aria-hidden="true">3</b><span>仅开放有限的指定国产模型，统一参赛条件</span></li>
+              </ul>
+              <p class="need-result">降低现场投入，方便选手，并保障模型使用公平。</p>
+            </article>
+          </div>
+
+          <p class="background-faq-links">
+            <span>相关问题：</span>
+            <a href="#faq-deepseek">知识库与大语言模型之间有什么关系？</a>
+          </p>
+
+        </div>
+      </section>
+
+      <section class="section soft" id="interface-debug">
+        <div class="container">
+          <div class="section-heading">
+            <p class="section-kicker">02 / 赛前接口联调</p>
+            <div>
+              <h2>配合甲方比赛安排，开放赛前线上联调服务</h2>
+              <p>
+                根据甲方比赛通知和赛程安排，我方提供互联网可访问的调试地址、接口说明及调用示例，并通过线上方式解答接口调用问题。选手可提前验证请求格式、模型名称、返回内容和业务程序；正式比赛时仅需切换服务地址。
+              </p>
+            </div>
+          </div>
+
+          <p class="stage-commitment">
+            <strong>服务承诺：</strong>
+            收到甲方比赛通知后，我方将按比赛安排开通互联网调试地址，并在赛前联调期间持续提供线上接口调用答疑和共性问题说明。
+          </p>
+
+          <div class="stage-plan" role="img" aria-label="比赛前通过公网调试接口调用赛事指定的有限国产模型">
+            <div class="stage-plan-header">
+              <span>赛前接口联调</span>
+              <div>
+                <strong>按比赛通知开通，持续提供线上答疑</strong>
+                <p>调试环境与正式比赛使用相同的接口规范和模型短名，现场仅切换服务地址。</p>
+              </div>
+            </div>
+            <div class="stage-plan-grid">
+              <article class="stage-card public">
+                <div class="stage-card-header">
+                  <b>01</b>
+                  <div>
+                    <span>服务开通</span>
+                    <h3>互联网调试接口</h3>
+                  </div>
+                </div>
+                <div class="stage-route" aria-label="根据甲方比赛通知开通互联网调试地址供选手联调">
+                  <span>甲方比赛通知</span><i aria-hidden="true">→</i><span>开通调试地址</span><i aria-hidden="true">→</i><span>选手线上联调</span>
+                </div>
+                <ul class="stage-points">
+                  <li>根据甲方比赛通知和赛程安排开通服务</li>
+                  <li>提供互联网可访问的调试地址和统一接口说明</li>
+                  <li>开放与比赛一致的接口格式和模型名称</li>
+                </ul>
+              </article>
+
+              <article class="stage-card event">
+                <div class="stage-card-header">
+                  <b>02</b>
+                  <div>
+                    <span>技术支持</span>
+                    <h3>线上接口调用答疑</h3>
+                  </div>
+                </div>
+                <div class="stage-route" aria-label="选手线上反馈接口调用问题，我方答疑处理并反馈结果">
+                  <span>线上问题反馈</span><i aria-hidden="true">→</i><span>答疑与问题处理</span><i aria-hidden="true">→</i><span>反馈联调结果</span>
+                </div>
+                <ul class="stage-points">
+                  <li>解答接口地址、请求参数和结果解析问题</li>
+                  <li>校验模型白名单和统一模型短名</li>
+                  <li>汇总共性问题并提供统一说明</li>
+                </ul>
+              </article>
+            </div>
+            <div class="stage-rule">
+              <strong>阶段完成标志</strong>
+              <span>选手可以通过赛前调试地址稳定调用指定模型，业务程序已完成基本连通和返回结果解析。</span>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <section class="section" id="equipment-debug">
+        <div class="container">
+          <div class="section-heading">
+            <p class="section-kicker">03 / 赛前设备部署与联调</p>
+            <div>
+              <h2>提前完成现场设备安装、组网和实机演练</h2>
+              <p>我方在正式比赛开始前至少 24 小时，或按甲方指定时间到达现场，完成中继服务器、交换机 / AP、网线和供电辅材的安装调试，配置赛场服务地址，并使用实际参赛终端进行全链路真机演练。</p>
+            </div>
+          </div>
+
+          <p class="stage-commitment">
+            <strong>到场安排：</strong>
+            我方提前至少 24 小时或按甲方要求到场，配合完成设备部署、现场网络联调及实际参赛终端真机演练，并在开赛前完成问题整改和服务复检。
+          </p>
+
+          <div
+            class="topology-shell"
+            role="img"
+            aria-label="选手终端经独立交换机访问中继服务器有线网口，中继服务器上的大模型网关服务再经 Wi-Fi 和上网路由器访问外部模型平台；选手不能直接上网"
+          >
+            <div class="topology-header">
+              <p>
+                <strong>正式比赛：竞赛专用隔离组网</strong>
+                <span>只有模型请求和模型回答通过中继服务器</span>
+              </p>
+              <div class="topology-legend" aria-label="图例">
+                <span class="legend-item"><i class="legend-swatch"></i>赛场内网</span>
+                <span class="legend-item"><i class="legend-swatch public"></i>管理侧外网</span>
+              </div>
+            </div>
+            <div class="topology-canvas">
+              <div class="network-map">
+                <section class="network-zone internal" aria-label="赛场内网">
+                  <div class="zone-heading">
+                    <strong>赛场内网</strong>
+                    <span>无互联网出口</span>
+                  </div>
+                  <div class="zone-chain">
+                    <div class="diagram-device">
+                      <b class="topology-step" aria-label="第 1 步">1</b>
+                      <span class="device-object laptop-object" aria-hidden="true">
+                        <i class="laptop-screen back"></i>
+                        <i class="laptop-screen front"></i>
+                        <i class="laptop-keyboard"></i>
+                        <em class="laptop-count">×20</em>
+                      </span>
+                      <span>
+                        <strong>约 20 台选手电脑</strong>
+                        <small>先连接交换机 / AP</small>
+                      </span>
+                    </div>
+                    <div class="zone-link" aria-label="选手电脑通过网线连接独立交换机">
+                      <span class="ethernet-cable" aria-hidden="true"><i></i></span>
+                    </div>
+                    <div class="diagram-device">
+                      <b class="topology-step" aria-label="第 2 步">2</b>
+                      <span class="device-object switch-object" aria-hidden="true">
+                        <i class="switch-antenna left"></i>
+                        <i class="switch-antenna right"></i>
+                        <i class="switch-chassis"></i>
+                        <i class="switch-ports"></i>
+                        <i class="switch-leds"></i>
+                      </span>
+                      <span>
+                        <strong>独立交换机 / AP</strong>
+                        <small>再通过网线连接中继服务器</small>
+                      </span>
+                    </div>
+                  </div>
+                </section>
+
+                <div class="map-link" aria-label="通过有线以太网传输模型请求和回答">
+                  <strong>有线以太网</strong>
+                  <span class="ethernet-cable wide" aria-hidden="true"><i></i></span>
+                  <small>请求 / 回答</small>
+                </div>
+
+                <section class="gateway-box" aria-label="运行大模型网关服务的中继服务器">
+                  <b class="topology-step gateway-step" aria-label="第 3 步">3</b>
+                  <div class="gateway-title">
+                    <span class="gateway-object relay-object" aria-hidden="true">
+                      <i class="relay-chassis"></i>
+                      <i class="relay-drive"></i>
+                      <i class="relay-light"></i>
+                    </span>
+                    <span>
+                      <span>核心服务设备</span>
+                      <strong>中继服务器</strong>
+                    </span>
+                  </div>
+                  <div class="gateway-body">
+                    <span class="gateway-function">检查请求格式与模型范围</span>
+                    <span class="gateway-function">检查模型白名单，统一转发</span>
+                    <span class="gateway-function">保管模型平台主密钥</span>
+                  </div>
+                  <div class="gateway-ports">
+                    <div class="gateway-port">
+                      <strong>有线网口</strong>
+                      <span>10.20.0.1 / 24</span>
+                    </div>
+                    <div class="gateway-port public">
+                      <strong>Wi-Fi</strong>
+                      <span>互联网出口</span>
+                    </div>
+                  </div>
+                  <div class="gateway-rule">不开启互联网共享·不做通用路由转发</div>
+                </section>
+
+                <div class="map-link public" aria-label="中继服务器通过 Wi-Fi 访问互联网模型平台">
+                  <strong>Wi-Fi 外网</strong>
+                  <svg
+                    class="wifi-link-icon"
+                    aria-hidden="true"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M12 20h.01" />
+                    <path d="M2 8.82a15 15 0 0 1 20 0" />
+                    <path d="M5 12.859a10 10 0 0 1 14 0" />
+                    <path d="M8.5 16.429a5 5 0 0 1 7 0" />
+                  </svg>
+                  <small>HTTPS 请求</small>
+                </div>
+
+                <section class="network-zone external" aria-label="管理侧外网">
+                  <div class="zone-heading">
+                    <strong>管理侧外网</strong>
+                    <span>仅中继服务器使用</span>
+                  </div>
+                  <div class="zone-chain">
+                    <div class="diagram-device">
+                      <b class="topology-step" aria-label="第 4 步">4</b>
+                      <span class="device-object router-object" aria-hidden="true">
+                        <i class="router-antenna left"></i>
+                        <i class="router-antenna right"></i>
+                        <i class="router-chassis"></i>
+                        <i class="router-slot"></i>
+                        <i class="router-leds"></i>
+                      </span>
+                      <span>
+                        <strong>现有上网路由器</strong>
+                        <small>为中继服务器提供稳定外网</small>
+                      </span>
+                    </div>
+                    <div class="zone-link public" aria-label="上网路由器通过互联网连接模型平台">
+                      <span class="wan-cable" aria-hidden="true"><i></i></span>
+                    </div>
+                    <div class="diagram-device">
+                      <b class="topology-step" aria-label="第 5 步">5</b>
+                      <span class="device-object rack-object" aria-hidden="true">
+                        <i class="rack-tower"></i>
+                        <i class="rack-tower"></i>
+                      </span>
+                      <span>
+                        <strong>大模型平台 API</strong>
+                        <small>当前按硅基流动方案接入</small>
+                      </span>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              <div class="blocked-route" aria-label="选手终端禁止直接访问互联网">
+                <span>选手终端</span>
+                <span class="blocked-line" aria-hidden="true"></span>
+                <span>互联网</span>
+                <strong>禁止直连</strong>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <section class="section soft" id="event-support">
+        <div class="container">
+          <div class="section-heading">
+            <p class="section-kicker">04 / 赛事现场运行保障</p>
+            <div>
+              <h2>赛前复检、赛中值守、异常处置和赛后收尾</h2>
+              <p>
+                正式比赛开始前关闭赛前公网调试入口，启用赛场内网服务地址并完成最后复检。比赛期间由我方提供现场技术保障，持续检查网关、设备、网络和云端模型调用状态。
+              </p>
+            </div>
+          </div>
+
+          <div class="timeline">
+            <article class="timeline-item">
+              <span>01</span>
+              <h3>开赛前复检</h3>
+              <p>关闭赛前公网调试入口，检查中继服务器、赛场内网地址、模型白名单和实际调用。</p>
+            </article>
+            <article class="timeline-item">
+              <span>02</span>
+              <h3>比赛期间值守</h3>
+              <p>监测网关健康状态、模型平台连通性和请求返回情况，及时响应选手和现场工作人员反馈。</p>
+            </article>
+            <article class="timeline-item">
+              <span>03</span>
+              <h3>异常定位与处置</h3>
+              <p>遇到连接失败、请求超时、模型错误或设备异常时，按终端、现场网络、网关和云端平台顺序排查处置。</p>
+            </article>
+            <article class="timeline-item">
+              <span>04</span>
+              <h3>赛后收尾</h3>
+              <p>比赛结束后停用临时服务入口，整理现场保障记录和问题处置情况，完成设备及文档收尾。</p>
+            </article>
+          </div>
+          <p class="responsibility-note">
+            <strong>现场保障边界：</strong>
+            我方负责网关、组网设备和模型调用链路的检查与处置；甲方负责现场工位、参赛终端、基础供电和互联网出口的协调。
+          </p>
+        </div>
+      </section>
+
+      <section class="section appendix-section" id="resources">
+        <div class="container">
+          <div class="section-heading">
+            <p class="section-kicker">附录一 / 现场设备与费用承担</p>
+            <div>
+              <h2>新增网关及组网设备由我方提供，硅基流动 Token 费用由我方承担</h2>
+              <p>
+                为便于甲方统筹，本方案将项目新增的核心设备、现场组网辅材与模型调用成本统一纳入我方保障范围，甲方无需另行采购或充值。
+              </p>
+            </div>
+          </div>
+
+          <div class="commitment-band" aria-label="设备和 Token 费用承担承诺">
+            <article class="commitment-item">
+              <span>设备投入</span>
+              <strong>我方负责</strong>
+              <p>负责项目所需中继服务器、独立交换机 / AP、网线及必要转接辅材的提供、安装和调试。</p>
+            </article>
+            <article class="commitment-item">
+              <span>模型调用成本</span>
+              <strong>我方承担</strong>
+              <p>赛前联调和正式比赛期间，通过本项目网关产生的硅基流动 Token 费用由我方统一充值并承担。</p>
+            </article>
+          </div>
+
+          <div class="appendix-block">
+            <h3 class="appendix-title"><span>A.1</span>现场设备清单</h3>
+            <div class="table-wrap">
+              <table class="plain-table">
+                <thead>
+                  <tr>
+                    <th>设备 / 材料</th>
+                    <th>主要用途</th>
+                    <th>数量或配置原则</th>
+                    <th>承担方</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Mac mini 中继服务器</td>
+                    <td>运行大模型网关，完成模型白名单检查、密钥保管、请求转发和结果返回。</td>
+                    <td>1 台，同时连接管理侧外网与赛场隔离内网。</td>
+                    <td>我方提供</td>
+                  </tr>
+                  <tr>
+                    <td>独立千兆交换机</td>
+                    <td>连接中继服务器与赛场终端，形成不接入互联网的竞赛局域网。</td>
+                    <td>1 台，端口数按现场有线连接需求配置。</td>
+                    <td>我方提供</td>
+                  </tr>
+                  <tr>
+                    <td>专用无线 AP</td>
+                    <td>在选手需要无线接入时，仅提供赛场内网 Wi-Fi，不接入互联网。</td>
+                    <td>按场地覆盖和并发需求配置。</td>
+                    <td>我方提供</td>
+                  </tr>
+                  <tr>
+                    <td>网线、转接器与供电辅材</td>
+                    <td>完成设备互联、稳定供电和必要的网口转接。</td>
+                    <td>按现场工位、布线距离和终端接口配置。</td>
+                    <td>我方提供</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="appendix-block">
+            <h3 class="appendix-title"><span>A.2</span>费用与现场条件边界</h3>
+            <div class="table-wrap">
+              <table class="plain-table">
+                <thead>
+                  <tr>
+                    <th>项目</th>
+                    <th>具体说明</th>
+                    <th>责任安排</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>硅基流动 Token 费用</td>
+                    <td>包括本项目赛前联调及正式比赛服务期间，由网关调用赛事指定模型所产生的 Token 消耗。</td>
+                    <td><strong>由我方统一承担，甲方无需单独充值或结算。</strong></td>
+                  </tr>
+                  <tr>
+                    <td>网关及组网设备</td>
+                    <td>上述中继服务器、交换机 / AP 和必要辅材的提供、安装、调试和赛事期间保障。</td>
+                    <td><strong>由我方负责。</strong></td>
+                  </tr>
+                  <tr>
+                    <td>参赛终端</td>
+                    <td>选手开发和比赛使用的电脑及其中的业务程序。</td>
+                    <td>不属于本方案新增网关设备，由甲方统筹参赛终端就位。</td>
+                  </tr>
+                  <tr>
+                    <td>场地基础条件</td>
+                    <td>包括中继服务器使用的稳定互联网出口、设备摆放位置、基础强电和布线施工协调。</td>
+                    <td>甲方协调现场条件，我方负责网关和竞赛内网设备的安装调试。</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <section class="section appendix-section" id="faq">
+        <div class="container">
+          <div class="section-heading">
+            <p class="section-kicker">附录二 / 专业说明</p>
+            <div>
+              <h2>知识库与大语言模型的关系</h2>
+            </div>
+          </div>
+
+          <div class="appendix-block" id="faq-deepseek">
+            <div class="knowledge-summary">
+              <strong>先说结论</strong>
+              选手直接调用 DeepSeek 等大语言模型可以得到回答，但<b>模型不一定掌握比赛指定资料，回答容易产生幻觉</b>。<b>知识库为模型提供经过整理的指定资料</b>，<b>大语言模型负责理解问题、查找相关内容并组织答案</b>，二者结合后才能更好地完成基于资料的问答。
+            </div>
+
+            <div class="knowledge-explanation">
+              <article class="knowledge-row">
+                <span>01</span>
+                <h4>直接调用大语言模型能得到答案吗？</h4>
+                <p>可以。DeepSeek 等大语言模型具备通用知识和语言理解能力，能够根据问题直接生成回答。但它的回答主要来自模型原有的训练知识，可能不了解赛题涉及的指定资料、最新文件或专业细节，也可能产生看似合理但与原文不符的幻觉。当题目要求答案必须依据指定资料时，单独询问大语言模型难以保证答案有据可查。</p>
+              </article>
+              <article class="knowledge-row">
+                <span>02</span>
+                <h4>知识库解决什么问题？</h4>
+                <p>知识库是将规则、手册、案例和业务资料统一整理后形成的可查询资料集合。它让系统优先从指定资料中找到与问题相关的内容，使回答有明确的资料依据，并便于核对来源。</p>
+              </article>
+              <article class="knowledge-row">
+                <span>03</span>
+                <h4>知识库为什么还需要大语言模型？</h4>
+                <p>知识库负责保存和提供资料，本身不会像人一样理解复杂问题，也不会自动归纳多份材料形成完整回答。大语言模型负责理解用户意图、从相关资料中提取要点，并将内容整理成自然、连贯的答案。</p>
+              </article>
+            </div>
+
+          </div>
+
+        </div>
+      </section>
+
+      <section class="section appendix-section" id="software-development">
+        <div class="container">
+          <div class="section-heading">
+            <p class="section-kicker">附录三 / 中继服务器定制软件开发</p>
+            <div>
+              <h2>中继服务器定制软件界面</h2>
+            </div>
+          </div>
+
+          <figure class="software-figure">
+            <img src="./modelmux-网关总览.png" alt="中继服务器软件网关总览界面" />
+          </figure>
+
+          <figure class="software-figure">
+            <img src="./modelmux-模型路由.png" alt="中继服务器软件模型路由界面" />
+          </figure>
+        </div>
+      </section>
+    </main>
+
+    </div>
+  </body>
+</html>
