@@ -22,7 +22,7 @@
 - MySQL 持久化考核数据，图片保存在服务器本地数据目录
 - 选手登录后可查看专属 API URL、API Key、已用/剩余额度、允许模型和调用示例
 - 选手 API 文档页内置 Playground，支持文本与 Qwen 图片理解测试；调用走同一个网关端点，因此与外部客户端一样受 RPM 限流并在测试模式下扣减总请求额度
-- 公网实例走 `deploy.sh` 本地构建推送 + systemd + nginx，赛中实例走 macOS `launchd` 常驻；仓库另附 Docker/Caddy 备选方案
+- 公网实例走 `deploy.sh` 本地构建推送 + systemd + nginx，赛中实例走 macOS `launchd` 常驻
 
 选手 API Key 和总请求额度随账号保存在 MySQL；运维客户端 Key、供应商 Key 和路由仍使用环境变量管理。网关调用日志与分钟限流状态保存在进程内存。模型 API 的停服状态和运行模式分别保存在 `MODELMUX_DATA_DIR/gateway-service-state.json` 与 `gateway-operation-mode.json`，考核账号、题目、答卷和时间记录持久化到 MySQL。
 
@@ -135,7 +135,7 @@ app/                 Next.js 页面与 HTTP Route Handlers
 src/                 管理控制台客户端组件与样式
 lib/gateway/         网关配置、鉴权、路由、代理与测试
 lib/competition/     考核数据、双角色鉴权、富文本清洗与实时事件
-deploy/              systemd、nginx、launchd 与 Docker/Caddy 备选示例
+deploy/              公网 systemd/nginx 与 Mac mini launchd 配置示例
 deploy.sh            公网实例的本地构建推送脚本
 scripts/             常驻启动与数据库初始化脚本
 docs/                组网、架构与部署文档

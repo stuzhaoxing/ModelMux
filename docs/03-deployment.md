@@ -116,17 +116,6 @@ curl https://debug.example.com/health
 systemctl stop modelmux
 ```
 
-### 2.4 备选：Docker + Caddy
-
-仓库里另外保留了一套容器方案（`deploy/docker-compose.public.yml` 和 `deploy/Caddyfile`），适合换一台干净服务器时快速拉起，Caddy 会自动申请证书：
-
-```bash
-MODELMUX_DOMAIN=debug.example.com \
-  docker compose -f deploy/docker-compose.public.yml up -d --build
-```
-
-当前公网实例用的是上面的 systemd + nginx 方案，两套不要同时开在一台机器上。容器方案的数据目录落在 Docker 卷 `/var/lib/modelmux`，MySQL 需要另行提供。
-
 ## 3. Mac mini 本地部署
 
 先在 macOS“系统设置 → 用户与群组”创建名为 `modelmux` 的标准用户，不授予管理员权限。在 Mac mini 安装 Node.js 22+、pnpm 和 MySQL，然后将项目部署到 `/opt/modelmux`。

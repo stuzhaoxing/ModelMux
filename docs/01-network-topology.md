@@ -185,7 +185,7 @@ Tailscale 中已经识别到目标候选设备：
 
 当前参考主机使用 PAC 代理 `http://localhost:1089/proxy.pac`。目标 Mac mini 是否需要代理仍需现场确认。
 
-如果江苏省监测技能竞赛在线答题系统运行在 Docker 中，容器通常不会自动继承 macOS 桌面 PAC 配置。后续要明确配置供应商 API 的代理出口，并将以下地址加入 `NO_PROXY`：
+系统由 `launchd` 以 `modelmux` 用户常驻，不会继承管理员桌面会话的 PAC 配置。需要走代理时，把代理变量写进 `/opt/modelmux/.env.local`（`scripts/start-local.sh` 会加载它），并把以下地址加入 `NO_PROXY`：
 
 ```text
 127.0.0.1,localhost,10.20.0.0/24
