@@ -567,14 +567,29 @@ function ModelsView({ gateway }: { gateway: GatewayStatus }) {
   const families = [
     { id: "deepseek" as const, name: "DeepSeek", note: "官方主路由 / 硅基流动备用" },
     { id: "qwen" as const, name: "Qwen", note: "阿里云百炼主路由 / 硅基流动备用" },
+    { id: "glm" as const, name: "GLM", note: "阿里云百炼 · 智谱原厂直供" },
+    { id: "kimi" as const, name: "Kimi", note: "阿里云百炼 · Moonshot 原厂直供" },
+    { id: "minimax" as const, name: "MiniMax", note: "阿里云百炼 · MiniMax 原厂直供" },
+    { id: "doubao" as const, name: "豆包", note: "火山方舟官方路由" },
     { id: "custom" as const, name: "自定义模型", note: "通过 MODELMUX_ROUTES_JSON 配置" },
   ];
   const providerNames: Record<string, string> = {
     aliyun: "阿里云百炼",
+    "aliyun-zhipu": "百炼 · 智谱直供",
+    "aliyun-kimi": "百炼 · Moonshot 直供",
+    "aliyun-minimax": "百炼 · MiniMax 直供",
+    ark: "火山方舟",
     deepseek: "DeepSeek 官方",
     siliconflow: "硅基流动",
   };
-  const tierNames = { flash: "Flash", pro: "Pro", max: "Max", custom: "Custom" };
+  const tierNames = {
+    flash: "Flash",
+    pro: "Pro",
+    plus: "Plus",
+    max: "Max",
+    flagship: "Flagship",
+    custom: "Custom",
+  };
 
   return (
     <section className="workspace-panel full-panel">
@@ -614,9 +629,6 @@ function ModelsView({ gateway }: { gateway: GatewayStatus }) {
                     </div>
                     <code>{model.alias}</code>
                     <p>{model.description}</p>
-                    {model.compatibilityAliases.length > 0 ? (
-                      <small>兼容旧别名：{model.compatibilityAliases.join(", ")}</small>
-                    ) : null}
                   </div>
                   <div className="provider-routes">
                     {model.routes.map((route, index) => (
@@ -963,7 +975,7 @@ function SettingsView({
           <div className="service-switch-row">
             <div>
               <strong>接受模型请求</strong>
-              <span>{gateway.serviceEnabled ? "OpenAI 与 Anthropic Messages 兼容端点当前可用" : "模型端点当前返回 HTTP 503"}</span>
+              <span>{gateway.serviceEnabled ? "OpenAI 兼容端点当前可用" : "模型端点当前返回 HTTP 503"}</span>
             </div>
             <button
               aria-checked={gateway.serviceEnabled}
@@ -985,7 +997,6 @@ function SettingsView({
             {[
               "/v1/models",
               "/v1/chat/completions",
-              "/v1/messages",
             ].map((endpoint) => (
               <div className="service-endpoint" key={endpoint}>
                 <code>{endpoint}</code>

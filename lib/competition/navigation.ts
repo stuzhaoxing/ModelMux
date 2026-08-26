@@ -1,7 +1,7 @@
 import type { CompetitionRole } from "./types";
 
 export type ContestantView = "questions" | "api-docs";
-export type JudgeView = "questions" | "answers";
+export type JudgeView = "dashboard" | "questions" | "answers";
 
 export const contestantViewRoutes: Record<ContestantView, string> = {
   questions: "/contestant/questions",
@@ -9,6 +9,7 @@ export const contestantViewRoutes: Record<ContestantView, string> = {
 };
 
 export const judgeViewRoutes: Record<JudgeView, string> = {
+  dashboard: "/judge/dashboard",
   questions: "/judge/questions",
   answers: "/judge/answers",
 };
@@ -18,7 +19,7 @@ export function isContestantView(value: string): value is ContestantView {
 }
 
 export function isJudgeView(value: string): value is JudgeView {
-  return value === "questions" || value === "answers";
+  return value === "dashboard" || value === "questions" || value === "answers";
 }
 
 export function contestantViewFromPath(pathname: string): ContestantView {
@@ -26,11 +27,12 @@ export function contestantViewFromPath(pathname: string): ContestantView {
 }
 
 export function judgeViewFromPath(pathname: string): JudgeView {
+  if (pathname === judgeViewRoutes.dashboard) return "dashboard";
   return pathname === judgeViewRoutes.answers ? "answers" : "questions";
 }
 
 export const roleHomeRoutes: Record<CompetitionRole, string> = {
-  judge: judgeViewRoutes.questions,
+  judge: judgeViewRoutes.dashboard,
   contestant: contestantViewRoutes.questions,
 };
 

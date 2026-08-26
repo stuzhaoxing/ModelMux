@@ -19,9 +19,9 @@ server {
     ssl_certificate     /etc/nginx/ssl/debug.example.com.crt;
     ssl_certificate_key /etc/nginx/ssl/debug.example.com.key;
 
-    # 题目和答案里的图片走同一个域名上传，应用层没有单张大小上限，
-    # 这里是唯一的闸门。模型请求体另有 MODELMUX_MAX_BODY_BYTES 兜底。
-    client_max_body_size 64m;
+    # 题目和答案附件没有应用层固定大小上限。0 表示 nginx 也不限制，
+    # 实际容量由数据盘和文件系统决定；模型请求体仍有自己的 2 MiB 兜底。
+    client_max_body_size 0;
 
     location / {
         proxy_pass http://127.0.0.1:4000;
@@ -31,6 +31,9 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Connection "";
+
+        # 大附件边接收边转发，避免 nginx 先把整个请求落入临时目录。
+        proxy_request_buffering off;
 
         # 必须关缓冲：/v1/* 的流式响应和考核系统的实时通道都是 SSE，
         # 一旦被 nginx 攒着不发，选手端会先看到"离线"再看到迟到的题目。

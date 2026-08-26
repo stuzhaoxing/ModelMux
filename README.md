@@ -1,6 +1,6 @@
 # 江苏省监测技能竞赛在线答题系统
 
-江苏省监测技能竞赛在线答题系统是面向竞赛场景的自托管答题与大模型网关服务。赛前部署为互联网调试服务，赛中运行在 Mac mini 的隔离局域网；两种环境使用同一套 Next.js 服务、OpenAI 与 Claude 兼容接口和模型白名单，选手只切换 API URL。
+江苏省监测技能竞赛在线答题系统是面向竞赛场景的自托管答题与大模型网关服务。赛前部署为互联网调试服务，赛中运行在 Mac mini 的隔离局域网；两种环境使用同一套 Next.js 服务、OpenAI 兼容接口和模型白名单，选手只切换 API URL。
 
 ## 当前能力
 
@@ -8,7 +8,6 @@
 - `GET /health`，覆盖网关配置、停服开关和考核数据库连通性；MySQL 连不上时返回 `503` 且 `status` 为 `degraded`
 - `GET /v1/models`
 - `POST /v1/chat/completions`，支持普通响应与 SSE 流式透传
-- `POST /v1/messages`，兼容 Claude Messages API、工具调用与 Claude SSE 流式事件
 - 每位选手独立 API Key、持久化请求额度、模型白名单、请求体限制和单进程 RPM 限流
 - 供应商 Key 轮换、按优先级路由及响应开始前的故障切换
 - 管理员一键停止或恢复模型 API，停服状态跨进程重启持久化
@@ -19,7 +18,9 @@
 - 选手端答案实时写入浏览器 localStorage；刷新或异常退出后若本机内容与服务端草稿不同，会用横幅询问恢复还是丢弃
 - 评委端和选手端的 SSE 通道在服务重启、反代报错后自动退避重连，不需要手动刷新页面
 - 评委实时查看全部选手的未开始、草稿、已提交状态及完整时间记录
-- MySQL 持久化考核数据，图片保存在服务器本地数据目录
+- 单密码保护的比赛大屏实时显示比赛状态、倒计时、全部选手答题进度、模型调用次数和累计 Token 消耗
+- 评委端可一键导出全部已发布/已关闭题目的答卷 ZIP；ZIP 按选手分目录，每道题同时生成 Word 和 PDF，未作答也会保留明确标注
+- MySQL 持久化考核数据，题目和答卷的图片及任意附件流式保存在服务器本地数据目录
 - 选手登录后可查看专属 API URL、API Key、已用/剩余额度、允许模型和调用示例
 - 选手 API 文档页内置 Playground，支持文本与 Qwen 图片理解测试；调用走同一个网关端点，因此与外部客户端一样受 RPM 限流并在测试模式下扣减总请求额度
 - 公网实例走 `deploy.sh` 本地构建推送 + systemd + nginx，赛中实例走 macOS `launchd` 常驻
@@ -36,7 +37,7 @@ cp .env.example .env.local
 pnpm dev
 ```
 
-选手入口为 `http://localhost:1444/contestant/questions`，API 文档为 `http://localhost:1444/contestant/api-docs`（Playground 是这个页面里的弹窗），管理员控制台为 `http://localhost:1444/admin`。默认关闭匿名调用；没有有效选手账号或运维 Key 时，网关不会成为开放代理。
+选手入口为 `http://localhost:1444/contestant/questions`，API 文档为 `http://localhost:1444/contestant/api-docs`（Playground 是这个页面里的弹窗），比赛投屏为 `http://localhost:1444/screen`，管理员控制台为 `http://localhost:1444/admin`。默认关闭匿名调用；没有有效选手账号或运维 Key 时，网关不会成为开放代理。
 
 管理员总览通过 `MODELMUX_INTERNAL_BASE_URL` 和 `MODELMUX_EXTERNAL_BASE_URL` 显示内网、外网入站端口及完整 API 地址。没有公网入站服务时将外网地址留空，总览会明确显示“未开放”。
 
@@ -47,9 +48,14 @@ pnpm dev
 | 统一登录页 | `http://localhost:1444/login` | 评委和选手共用；按账号密码判定角色，登录后跳到对应工作台 |
 | 选手答题端 | `http://localhost:1444/contestant/questions` | 管理员生成的选手账号，Cookie 为 `modelmux_competition_session` |
 | 评委工作台 | `http://localhost:1444/judge/questions` | 管理员生成的评委账号，Cookie 为 `modelmux_competition_session` |
+| 比赛投屏 | `http://localhost:1444/screen` | 使用与管理员相同的单密码；签发独立只读大屏 Cookie，不授予管理员权限 |
 | 管理员控制台 | `http://localhost:1444/admin` | 独立管理密码，Cookie 为 `modelmux_admin_session` |
 
-评委和选手共用一个会话 Cookie，因此同一个浏览器同一时刻只能是其中一个身份，后登录的会顶掉先登录的；要同时开两端请用两个浏览器或无痕窗口。管理员 Cookie 与它们相互独立，可以和任意一端同时保持登录。同一个账号名同时存在于评委和选手时，登录页会让本人再选一次角色。后台页面和 `/api/admin/*` 均强制验证管理员会话；模型 API 另用客户端 API Key，不复用任何网页登录凭据。
+评委和选手共用一个会话 Cookie，因此同一个浏览器同一时刻只能是其中一个身份，后登录的会顶掉先登录的；要同时开两端请用两个浏览器或无痕窗口。管理员 Cookie、大屏只读 Cookie 与它们相互独立，可以同时保持登录；大屏虽然复用管理员密码，但大屏会话不能访问 `/admin` 或 `/api/admin/*`。同一个账号名同时存在于评委和选手时，登录页会让本人再选一次角色。后台页面和 `/api/admin/*` 均强制验证管理员会话；模型 API 另用客户端 API Key，不复用任何网页登录凭据。
+
+评委在 Dashboard 填写比赛时长后开始比赛；开始状态下选手同时看到整套题目并可正常保存、提交，`/screen` 同步显示倒计时。评委可随时停止比赛，停止或自然到时后选手端隐藏全部题目，只显示“比赛已结束”；再次开始会重新计时并保留历史答案。首次开始前显示“比赛未开始”。比赛未运行时，评委可在 `/judge/answers` 删除题目，删除操作会同时永久删除该题已有答卷；比赛进行中禁止删除。默认时长由 `MODELMUX_COMPETITION_DURATION_MINUTES` 控制，范围 1-1440 分钟，默认 90 分钟。
+
+评委在 Dashboard 点击“导出全部答卷”即可下载归档 ZIP。导出会把选手回答中的图片嵌入 Word/PDF，普通附件仍以文件名、大小和站内下载地址写入文档，不会把任意大的普通附件复制进归档；附件仍保存在 `MODELMUX_DATA_DIR/uploads`，可从系统中下载。大屏每 3 秒刷新数据，选手超过单屏容量时自动调整布局。
 
 完整验证：
 
@@ -67,38 +73,34 @@ curl http://localhost:1444/v1/chat/completions \
   -H 'Authorization: Bearer <client-key>' \
   -H 'Content-Type: application/json' \
   -d '{
-    "model": "deepseek-pro",
-    "messages": [{"role": "user", "content": "你好"}],
-    "stream": false
-  }'
-
-curl http://localhost:1444/v1/messages \
-  -H 'x-api-key: <client-key>' \
-  -H 'anthropic-version: 2023-06-01' \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "model": "deepseek-pro",
-    "max_tokens": 1024,
+    "model": "deepseek-v4-pro",
     "messages": [{"role": "user", "content": "你好"}],
     "stream": false
   }'
 ```
 
-两套规范共用同一把选手 Key、RPM 限制、总请求额度和全部公开模型别名。Claude 兼容入口接受 `x-api-key` 和 `anthropic-version`，并在 `stream: true` 时返回 Claude SSE 事件。协议兼容不代表提供 Claude 模型；实际调用仍由下方白名单映射到 Qwen 或 DeepSeek 上游，供应商密钥不会下发给选手。
+模型 API 统一使用 OpenAI Chat Completions 兼容规范和 `Authorization: Bearer <client-key>` 鉴权。实际调用由下方白名单映射到对应国产模型平台，供应商密钥不会下发给选手。
 
-客户端只能使用以下稳定白名单型号，真实上游模型 ID 只由服务端路由决定：
+客户端只能使用以下白名单型号，`model` 必须与模型平台返回的真实模型 ID 完全一致：
 
-| 对外型号 | 默认主路由 | 默认备用路由 |
-| --- | --- | --- |
-| `deepseek-flash` | DeepSeek 官方 / `deepseek-v4-flash` | 硅基流动 |
-| `deepseek-pro` | DeepSeek 官方 / `deepseek-v4-pro` | 硅基流动 |
-| `qwen-flash` | 阿里云百炼 / `qwen3.7-flash` | 硅基流动 |
-| `qwen-pro` | 阿里云百炼 / `qwen3.7-plus` | 硅基流动 |
-| `qwen-max` | 阿里云百炼 / `qwen3.7-max` | 硅基流动 |
+| `model` ID | 模型平台 | 上下文 | 备注 |
+| --- | --- | --- | --- |
+| `deepseek-v4-flash` | DeepSeek 官方 | 1M | 硅基流动备用 |
+| `deepseek-v4-pro` | DeepSeek 官方 | 1M | 硅基流动备用 |
+| `qwen3.7-flash` | 阿里云百炼 | 1M | 硅基流动备用 |
+| `qwen3.7-plus` | 阿里云百炼 | 1M | 硅基流动备用 |
+| `qwen3.7-max` | 阿里云百炼 | 1M | 硅基流动备用 |
+| `qwen3.8-max` | 阿里云百炼 | 1M | 最新千问旗舰 |
+| `ZHIPU/GLM-5.3` | 阿里云百炼 · 智谱原厂直供 | 1M | 最新 GLM 旗舰 |
+| `kimi/kimi-k3` | 阿里云百炼 · Moonshot 原厂直供 | 1M | 最新 Kimi 旗舰 |
+| `MiniMax/MiniMax-M3` | 阿里云百炼 · MiniMax 原厂直供 | 192K | 最新 MiniMax 多模态推理模型 |
+| `doubao-seed-2-0-pro-260215` | 火山方舟 | 以平台为准 | 配置 `ARK_API_KEYS` 后自动开放 |
 
-旧别名 `deepseek` 和 `qwen` 分别兼容到两个 Pro 档。DeepSeek 官方仅提供 Flash、Pro，因此不提供 `deepseek-max`。DeepSeek V4 的思考参数是 `thinking.type=enabled|disabled` 与可选的 `reasoning_effort=high|max`；Qwen Chat Completions 使用 `enable_thinking` 与可选的正整数 `thinking_budget`。网关只校验并转发官方参数，不根据模型档位擅自覆盖。供应商 Key、Base URL、默认模型和硅基流动备用模型均在 `.env.example` 中配置。
+网关不支持 `deepseek`、`qwen`、`deepseek-pro`、`qwen-pro` 等简称或旧产品名，大小写也必须与表中 ID 一致；不精确的名称统一返回 `400 model_not_allowed`。DeepSeek V4 的思考参数是 `thinking.type=enabled|disabled` 与可选的 `reasoning_effort=high|max`；Qwen Chat Completions 使用 `enable_thinking` 与可选的正整数 `thinking_budget`。网关只校验并转发官方参数，不根据模型名称擅自覆盖。
 
-当前 Qwen Flash、Pro、Max 路由支持文本、图像和视频理解，并返回文本内容。多模态理解不等同于文生图；浏览器 Playground 当前只开放单张 PNG/JPG/WebP 图片。外部客户端可按 OpenAI Chat Completions 的 `image_url` / `video_url` 调用，或在 Claude Messages 中使用 `image` / `source` 内容块传入图片；Claude 兼容入口暂不接受视频内容块。
+当前 Qwen、Kimi K3、MiniMax M3 和豆包旗舰路由支持文本、图像和视频理解，并返回文本内容；GLM-5.3 与 DeepSeek V4 仅开放文本输入。多模态理解不等同于文生图；浏览器 Playground 当前只开放单张 PNG/JPG/WebP 图片。外部客户端可按 OpenAI Chat Completions 的 `image_url` / `video_url` 调用。
+
+GLM、Kimi、MiniMax 与 Qwen 旗舰只有在 `DASHSCOPE_API_KEYS` 已配置时才进入选手白名单；豆包只有在 `ARK_API_KEYS` 已配置时才进入白名单。这样 `/v1/models` 和选手 API 文档不会发布实际无法调用的模型。
 
 ## 两种部署
 

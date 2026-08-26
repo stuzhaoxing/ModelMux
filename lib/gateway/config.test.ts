@@ -21,15 +21,92 @@ describe("gateway config", () => {
     expect(config.internalBaseUrl).toBeNull();
     expect(config.externalBaseUrl).toBeNull();
     expect(config.models.map((model) => model.alias)).toEqual([
-      "deepseek-flash",
-      "deepseek-pro",
-      "qwen-flash",
-      "qwen-pro",
-      "qwen-max",
+      "deepseek-v4-flash",
+      "deepseek-v4-pro",
+      "qwen3.7-flash",
+      "qwen3.7-plus",
+      "qwen3.7-max",
     ]);
     expect(config.models[0].routes[0].priority).toBe(100);
-    expect(config.models[1].compatibilityAliases).toEqual(["deepseek"]);
-    expect(config.models[3].compatibilityAliases).toEqual(["qwen"]);
+    expect(config.models[3].displayName).toBe("Qwen 3.7 Plus");
+    expect(config.models.map((model) => model.contextWindowTokens)).toEqual([
+      1_000_000,
+      1_000_000,
+      1_000_000,
+      1_000_000,
+      1_000_000,
+    ]);
+    expect(config.models.every(
+      (model) => model.alias === model.routes[0].upstreamModel,
+    )).toBe(true);
+  });
+
+  it("uses an overridden primary platform model ID as the public ID", () => {
+    const config = loadGatewayConfig(env({
+      MODEL_QWEN_PLUS: "qwen-plus-latest",
+    }));
+    const model = config.models.find(
+      (candidate) => candidate.alias === "qwen-plus-latest",
+    );
+
+    expect(model).toMatchObject({
+      displayName: "qwen-plus-latest",
+      family: "qwen",
+      tier: "plus",
+    });
+    expect(model?.routes[0].upstreamModel).toBe("qwen-plus-latest");
+  });
+
+  it("adds the verified DashScope domestic flagship catalog when configured", () => {
+    const config = loadGatewayConfig(env({
+      DASHSCOPE_API_KEYS: "dashscope-key",
+    }));
+
+    expect(config.models.map((model) => model.alias)).toEqual([
+      "deepseek-v4-flash",
+      "deepseek-v4-pro",
+      "qwen3.7-flash",
+      "qwen3.7-plus",
+      "qwen3.7-max",
+      "qwen3.8-max",
+      "ZHIPU/GLM-5.3",
+      "kimi/kimi-k3",
+      "MiniMax/MiniMax-M3",
+    ]);
+    expect(
+      config.models.find((model) => model.alias === "kimi/kimi-k3"),
+    ).toMatchObject({
+      displayName: "Kimi K3",
+      family: "kimi",
+      tier: "flagship",
+      inputModalities: ["text", "image", "video"],
+      contextWindowTokens: 1_048_576,
+      routes: [{ provider: "aliyun-kimi", upstreamModel: "kimi/kimi-k3" }],
+    });
+    expect(
+      config.models.find((model) => model.alias === "MiniMax/MiniMax-M3")
+        ?.contextWindowTokens,
+    ).toBe(196_608);
+  });
+
+  it("adds the exact Ark Doubao model only when its key is configured", () => {
+    const withoutArk = loadGatewayConfig(env());
+    const withArk = loadGatewayConfig(env({ ARK_API_KEYS: "ark-key" }));
+
+    expect(withoutArk.models.some((model) => model.family === "doubao")).toBe(
+      false,
+    );
+    expect(
+      withArk.models.find((model) => model.family === "doubao"),
+    ).toMatchObject({
+      alias: "doubao-seed-2-0-pro-260215",
+      displayName: "Doubao Seed 2.0 Pro",
+      routes: [{
+        provider: "ark",
+        upstreamModel: "doubao-seed-2-0-pro-260215",
+        chatCompletionsPath: "/v3/chat/completions",
+      }],
+    });
   });
 
   it("does not expose provider base URLs or key environment names", () => {
@@ -111,7 +188,7 @@ describe("gateway config", () => {
 
   it("requires every advertised model to have a configured route", () => {
     const routes = {
-      deepseek: [
+      "deepseek-model": [
         {
           provider: "primary",
           baseUrl: "https://primary.example.com",
@@ -120,7 +197,7 @@ describe("gateway config", () => {
           priority: 100,
         },
       ],
-      qwen: [
+      "qwen-model": [
         {
           provider: "backup",
           baseUrl: "https://backup.example.com",
@@ -153,7 +230,7 @@ describe("gateway config", () => {
       new Set(["deepseek", "aliyun", "siliconflow"]),
     );
     expect(
-      config.models.find((model) => model.alias === "qwen-flash")?.routes[0],
+      config.models.find((model) => model.alias === "qwen3.7-flash")?.routes[0],
     ).toMatchObject({
       provider: "aliyun",
       upstreamModel: "qwen3.7-flash",
@@ -163,7 +240,7 @@ describe("gateway config", () => {
 
   it("sorts custom routes by priority", () => {
     const routes = {
-      deepseek: [
+      "primary-model": [
         {
           provider: "backup",
           baseUrl: "https://backup.example.com/",
@@ -193,12 +270,12 @@ describe("gateway config", () => {
     );
   });
 
-  it("rejects the unofficial deepseek-max alias in custom routes", () => {
+  it("rejects a custom public name that differs from its primary platform model", () => {
     expect(() =>
       loadGatewayConfig(
         env({
           MODELMUX_ROUTES_JSON: JSON.stringify({
-            "deepseek-max": [
+            "short-name": [
               {
                 provider: "deepseek",
                 baseUrl: "https://api.deepseek.com",
@@ -211,6 +288,8 @@ describe("gateway config", () => {
           }),
         }),
       ),
-    ).toThrow("deepseek-max is not an official DeepSeek model alias");
+    ).toThrow(
+      "public model id 'short-name' must match primary upstream model 'deepseek-v4-pro'",
+    );
   });
 });

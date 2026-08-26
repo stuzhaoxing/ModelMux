@@ -40,6 +40,12 @@ const categoryTags: Record<ActivityCategory, string> = {
   model: "模型",
 };
 
+function categoryTag(entry: ActivityEntry): string {
+  return entry.action === "competition-started" || entry.action === "competition-stopped"
+    ? "比赛"
+    : categoryTags[entry.category];
+}
+
 export function JudgeActivityLog({
   entries,
   total,
@@ -112,7 +118,7 @@ export function JudgeActivityLog({
             <div className="activity-row-top">
               <time>{formatCompetitionClock(entry.at)}</time>
               <strong>{activityActionLabel(entry.action)}</strong>
-              <span className="activity-tag">{categoryTags[entry.category]}</span>
+              <span className="activity-tag">{categoryTag(entry)}</span>
             </div>
             <div className="activity-actor">
               {roleLabel(entry)} {entry.actorName}

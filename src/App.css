@@ -1,3 +1,11 @@
+@font-face {
+  font-family: "douyuFont";
+  src: url("/fonts/douyuFont.otf") format("opentype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   font-family:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
@@ -922,7 +930,8 @@ button:focus-visible,
   font-weight: 700;
 }
 
-.model-tier-mark.pro {
+.model-tier-mark.pro,
+.model-tier-mark.plus {
   color: #1d527c;
   background: #e8f1f7;
   border-color: #cadde9;
@@ -932,6 +941,12 @@ button:focus-visible,
   color: #704c17;
   background: #f5efe3;
   border-color: #e6d7b8;
+}
+
+.model-tier-mark.flagship {
+  color: #275943;
+  background: #e9f3ee;
+  border-color: #cce2d6;
 }
 
 .model-product {
@@ -959,7 +974,8 @@ button:focus-visible,
   text-transform: uppercase;
 }
 
-.model-tier-label.pro {
+.model-tier-label.pro,
+.model-tier-label.plus {
   color: #245b83;
   background: #eaf2f7;
 }
@@ -967,6 +983,11 @@ button:focus-visible,
 .model-tier-label.max {
   color: #76531e;
   background: #f5efe4;
+}
+
+.model-tier-label.flagship {
+  color: #285c45;
+  background: #e9f3ee;
 }
 
 .model-product code {

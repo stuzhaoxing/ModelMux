@@ -50,6 +50,8 @@ MODELMUX_TRUST_PROXY=true
 DEEPSEEK_API_KEYS=<provider-key-1>
 DASHSCOPE_API_KEYS=<provider-key-1>
 SILICONFLOW_API_KEYS=<provider-key-1>,<provider-key-2>
+# 可选；配置后开放 doubao-seed-2-0-pro-260215
+ARK_API_KEYS=<provider-key-1>
 # 应用只监听回环，公网入口由 nginx 提供
 HOSTNAME=127.0.0.1
 PORT=4000
@@ -153,8 +155,17 @@ MODELMUX_ADMIN_PASSWORD=<strong-password>
 MODELMUX_ADMIN_SESSION_SECRET=<openssl-rand-hex-32>
 MODELMUX_DATABASE_URL=mysql://modelmux:<database-password>@127.0.0.1:3306/modelmux
 MODELMUX_DATA_DIR=/opt/modelmux/data
+# PDF 导出使用的 CJK 字体（可选；未设置时自动探测系统字体）
+MODELMUX_EXPORT_FONT_PATH=/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.otf
+# 仅当上面配置的是 TTC 字体集合时填写，例如 NotoSerifCJKsc-Regular
+MODELMUX_EXPORT_FONT_FAMILY=
+# Dashboard 默认比赛时长，评委开始比赛时可修改，单位分钟
+MODELMUX_COMPETITION_DURATION_MINUTES=90
 MODELMUX_CLIENT_KEYS=<competition-client-key>
+DASHSCOPE_API_KEYS=<provider-key-1>
 SILICONFLOW_API_KEYS=<provider-key-1>,<provider-key-2>
+# 可选；配置后开放 doubao-seed-2-0-pro-260215
+ARK_API_KEYS=<provider-key-1>
 MODELMUX_ALLOW_ANONYMOUS=false
 HOSTNAME=10.20.0.1
 PORT=4000
@@ -173,8 +184,12 @@ sudo chmod 700 /opt/modelmux/data
 sudo chmod 600 /opt/modelmux/.env.local
 ```
 
-题目和答卷图片不设置应用层大小上限，上传内容会流式写入
-`MODELMUX_DATA_DIR/uploads`，实际容量由磁盘剩余空间决定。比赛前应确认数据盘空间并纳入备份。
+题目和答卷里的图片、PDF、Office 文档、压缩包及其他附件都不设置应用层固定大小上限，
+上传内容会流式写入 `MODELMUX_DATA_DIR/uploads`，下载也使用文件流。实际容量由浏览器、
+磁盘和文件系统决定。比赛前应确认数据盘空间并纳入备份；Nginx 必须同时使用
+`client_max_body_size 0` 和 `proxy_request_buffering off`，否则代理仍会限制或完整缓冲大附件。
+
+评委端“导出全部答卷”会为每个启用选手、每道已发布或已关闭题目生成一份 `.docx` 和一份 `.pdf`，再以 ZIP 流式下载。Word 中文使用宋体（SimSun），西文使用 Times New Roman。PDF 需要可被 `fontkit` 识别的 CJK TTF/OTF/TTC；生产 Linux 建议安装 `fonts-noto-cjk` 并将 `MODELMUX_EXPORT_FONT_PATH` 指向 `NotoSerifCJK-Regular.otf` 等宋体类字体。使用 TTC 字体集合时还需通过 `MODELMUX_EXPORT_FONT_FAMILY` 指定其中的简体中文字体，避免选中错误字形或导出失败。导出临时文件写入数据目录，下载连接关闭后自动清理。
 
 安装 `launchd` 服务：
 
@@ -195,13 +210,15 @@ curl http://10.20.0.1:4000/v1/models \
   -H 'Authorization: Bearer <competition-client-key>'
 ```
 
+投屏电脑打开 `http://10.20.0.1:4000/screen` 后，输入与 `MODELMUX_ADMIN_PASSWORD` 相同的单密码。系统签发独立的大屏只读会话，不会授予管理员后台权限；大屏快照接口也验证该会话，不能绕过页面直接读取。页面显示姓名、答题状态、模型调用次数与 Token 累计值，不包含登录账号、答案正文、密码或 API Key。选手区域会自动调整行列，确保全部选手始终同屏展示。
+
 ## 4. 流式响应代理
 
-任何反向代理都必须为这三类长连接禁用缓冲并延长读取超时，`deploy/nginx-modelmux.conf.example` 已经按这个要求写好：
+任何反向代理都必须为这两类长连接禁用缓冲并延长读取超时，`deploy/nginx-modelmux.conf.example` 已经按这个要求写好：
 
 | 路径 | 长连接类型 |
 | --- | --- |
-| `/v1/chat/completions`、`/v1/messages` | 模型 SSE 流式响应 |
+| `/v1/chat/completions` | 模型 SSE 流式响应 |
 | `/api/competition/events` | 考核系统的实时通道，评委发题和模式切换靠它推送 |
 
 ```nginx
@@ -222,17 +239,19 @@ gzip off;
 - `/` 跳转到选手答题页 `/contestant/questions`，API 文档位于 `/contestant/api-docs`（Playground 是这个页面里的弹窗，旧地址 `/contestant/playground` 会跳转过来），管理员控制台位于 `/admin`，评委工作台位于 `/judge/questions`，评委和选手的登录页统一为 `/login`。
 - 管理员总览显示内网和外网入站端口；没有公网入站服务时外网端口显示“未开放”。
 - 未登录请求 `/api/admin/status` 和 `/api/admin/competition/users` 均返回 `401`。
-- 管理员可创建评委和选手账号。评委和选手共用 `modelmux_competition_session`，同一个浏览器同一时刻只能保持其中一个身份，后登录的会顶掉先登录的；要同时开两端需用两个浏览器或无痕窗口。管理员会话独立，可与任一端并存。
-- 评委发布题目后，已登录选手无需刷新即可收到题目。
+- 管理员可创建评委和选手账号。评委和选手共用 `modelmux_competition_session`，同一个浏览器同一时刻只能保持其中一个身份，后登录的会顶掉先登录的；要同时开两端需用两个浏览器或无痕窗口。管理员会话和大屏只读会话彼此独立，可与任一端并存。
+- 评委在 Dashboard 填写时长并开始比赛后，已登录选手无需刷新即可同时收到整套题目，大屏倒计时同步开始；停止或自然到时后，选手端隐藏题目并禁止继续保存、提交，历史答案保留。
+- 比赛未运行时，评委可在 `/judge/answers` 删除题目；该题已有草稿和已提交答卷会随题目一并永久删除，进行中的比赛拒绝删除请求。
 - 选手草稿、最终提交和相应时间可在评委端查看；最终提交后不能修改。
-- 上传图片实际写入 `MODELMUX_DATA_DIR/uploads`，重启服务后仍可访问。
-- 系统设置关闭模型 API 后，OpenAI 与 Claude 兼容模型端点均返回 `503 service_suspended`，管理员后台仍可访问。
+- 评委可在题目中、选手可在答卷中上传任意类型附件；文件实际写入 `MODELMUX_DATA_DIR/uploads`，重启服务后仍可下载。
+- 评委在答题进度页点击“导出全部答卷”可下载按选手分目录的 ZIP；每道题同时包含 Word/PDF，未开始作答的选手也会生成“尚未开始作答”文件。
+- 系统设置关闭模型 API 后，OpenAI 兼容模型端点返回 `503 service_suspended`，管理员后台仍可访问。
 - 停服后重启服务，模型 API 仍保持停止；从系统设置重新开启后恢复调用。
 - 停掉 MySQL 后 `/health` 返回 `503`，`status` 为 `degraded`，`database.reachable` 为 `false`；恢复 MySQL 后重新返回 `200`。
 - 选手在答题框输入后不保存直接刷新页面，页面顶部出现"本机存有一份未保存的答案"横幅，点"恢复"回到刷新前的内容，点"丢弃"或直接继续输入都按丢弃处理。
 - 重启服务后，选手端和评委端的在线状态在十几秒内自行恢复，不需要手动刷新页面。
 - 无选手 Key 的 `/v1/models` 返回 `401`。
-- 同一选手 Key 可以调用 OpenAI 兼容接口和 Claude Messages 兼容接口，成功请求共用同一总额度和模型白名单。
+- 选手 Key 通过 OpenAI 兼容接口调用白名单模型，成功请求计入同一总额度。
 - 非白名单模型返回 `400 model_not_allowed`。
 - 登录选手可从 API 文档页的 Playground 完成文本和 Qwen 图片理解调用。Playground 用的就是选手自己的 API Key 打同一个网关端点，所以每次成功调用 `api_requests_used` 都 +1（上游失败会退回），测试模式下同时扣减剩余额度；频率超限仍返回 `429 rate_limit_exceeded`。
 - 普通和 `stream: true` 请求都能完整返回。

@@ -20,6 +20,9 @@ coverage
 *.tsbuildinfo
 .modelmux-data
 
+# Generated account handoffs contain plaintext credentials.
+output/test-accounts/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

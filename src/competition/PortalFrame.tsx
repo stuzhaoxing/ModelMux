@@ -40,7 +40,7 @@ export function PortalFrame({
     <div className={`competition-portal ${role} mode-${mode ?? "unknown"}`}>
       <OperationModeBanner mode={mode} />
       <header className="competition-header">
-        <a className="competition-brand" href={role === "judge" ? "/judge/questions" : "/contestant/questions"}>
+        <a className="competition-brand" href={role === "judge" ? "/judge/dashboard" : "/contestant/questions"}>
           <span className="competition-brand-mark"><span /><span /><span /></span>
           <span><strong>{SYSTEM_NAME}</strong><small>{role === "judge" ? "评委工作台" : "选手答题端"}</small></span>
         </a>

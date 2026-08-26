@@ -4,6 +4,7 @@ import type {
   GatewayConfig,
   GatewayStatus,
   ModelFamily,
+  ModelInputModality,
   ModelRouteGroup,
   ModelTier,
   ProviderAdapter,
@@ -66,56 +67,168 @@ function deploymentMode(value: string | undefined): DeploymentMode {
 }
 
 interface ModelPresentation {
-  compatibilityAliases: string[];
   displayName: string;
   description: string;
   family: ModelFamily;
   tier: ModelTier;
+  inputModalities: ModelInputModality[];
+  contextWindowTokens: number | null;
 }
 
-function modelPresentation(alias: string): ModelPresentation {
-  const match = /^(deepseek|qwen)-(flash|pro|max)$/.exec(alias);
-  if (!match || (match[1] === "deepseek" && match[2] === "max")) {
+type ModelIdentity = Pick<
+  ModelPresentation,
+  | "family"
+  | "tier"
+  | "inputModalities"
+  | "contextWindowTokens"
+>;
+
+const TEXT_INPUT: ModelInputModality[] = ["text"];
+const MULTIMODAL_INPUT: ModelInputModality[] = ["text", "image", "video"];
+
+const PLATFORM_MODEL_NAMES: Record<string, string> = {
+  "deepseek-v4-flash": "DeepSeek V4 Flash",
+  "deepseek-v4-pro": "DeepSeek V4 Pro",
+  "qwen3.7-flash": "Qwen 3.7 Flash",
+  "qwen3.7-plus": "Qwen 3.7 Plus",
+  "qwen3.7-max": "Qwen 3.7 Max",
+  "qwen3.8-max": "Qwen 3.8 Max",
+  "ZHIPU/GLM-5.3": "GLM-5.3",
+  "kimi/kimi-k3": "Kimi K3",
+  "MiniMax/MiniMax-M3": "MiniMax M3",
+  "doubao-seed-2-0-pro-260215": "Doubao Seed 2.0 Pro",
+};
+
+function modelPresentation(
+  modelId: string,
+  family: ModelFamily = "custom",
+  tier: ModelTier = "custom",
+  inputModalities: ModelInputModality[] = TEXT_INPUT,
+  contextWindowTokens: number | null = null,
+): ModelPresentation {
+  if (family === "custom" || tier === "custom") {
     return {
-      compatibilityAliases: [],
-      displayName: alias,
+      displayName: modelId,
       description: "自定义模型路由",
       family: "custom",
       tier: "custom",
+      inputModalities,
+      contextWindowTokens,
     };
   }
 
-  const family = match[1] as Exclude<ModelFamily, "custom">;
-  const tier = match[2] as Exclude<ModelTier, "custom">;
-  const familyName = family === "deepseek" ? "DeepSeek" : "Qwen";
-  const tierName = tier === "flash" ? "Flash" : tier === "pro" ? "Pro" : "Max";
-  const descriptions = {
+  const descriptions: Record<
+    ModelFamily,
+    Partial<Record<ModelTier, string>>
+  > = {
     deepseek: {
       flash: "DeepSeek 官方快速模型，支持思考与非思考模式",
       pro: "DeepSeek 官方高能力模型，支持思考与非思考模式",
+      plus: "不支持的产品型号",
       max: "不支持的产品档位",
     },
     qwen: {
       flash: "低延迟多模态模型，支持文本、图像与视频理解",
-      pro: "均衡型多模态模型，支持文本、图像与视频理解",
+      pro: "不支持的产品型号",
+      plus: "均衡型多模态模型，支持文本、图像与视频理解",
       max: "旗舰多模态模型，适合复杂视觉与推理任务",
     },
-  } as const;
+    glm: {
+      flagship: "智谱最新旗舰文本模型，由阿里云百炼智谱原厂直供",
+    },
+    kimi: {
+      flagship: "Moonshot 最新旗舰多模态模型，由阿里云百炼原厂直供",
+    },
+    minimax: {
+      flagship: "MiniMax 最新多模态推理模型，由阿里云百炼原厂直供",
+    },
+    doubao: {
+      flagship: "豆包最新旗舰多模态模型，由火山方舟官方提供",
+    },
+    custom: {
+      custom: "自定义模型路由",
+    },
+  };
 
   return {
-    compatibilityAliases: tier === "pro" ? [family] : [],
-    displayName: `${familyName} ${tierName}`,
-    description: descriptions[family][tier],
+    displayName: PLATFORM_MODEL_NAMES[modelId] ?? modelId,
+    description: descriptions[family][tier] ?? "平台模型路由",
     family,
     tier,
+    inputModalities,
+    contextWindowTokens,
+  };
+}
+
+function modelIdentity(modelId: string): ModelIdentity {
+  const deepseek = /^deepseek-v4-(flash|pro)$/.exec(modelId);
+  if (deepseek) {
+    return {
+      family: "deepseek",
+      tier: deepseek[1] as "flash" | "pro",
+      inputModalities: TEXT_INPUT,
+      contextWindowTokens: 1_000_000,
+    };
+  }
+  const qwen = /^qwen3\.(?:7|8)-(flash|plus|max)$/.exec(modelId);
+  if (qwen) {
+    return {
+      family: "qwen",
+      tier: qwen[1] as "flash" | "plus" | "max",
+      inputModalities: MULTIMODAL_INPUT,
+      contextWindowTokens: 1_000_000,
+    };
+  }
+  const knownModels: Record<string, ModelIdentity> = {
+    "ZHIPU/GLM-5.3": {
+      family: "glm",
+      tier: "flagship",
+      inputModalities: TEXT_INPUT,
+      contextWindowTokens: 1_048_576,
+    },
+    "kimi/kimi-k3": {
+      family: "kimi",
+      tier: "flagship",
+      inputModalities: MULTIMODAL_INPUT,
+      contextWindowTokens: 1_048_576,
+    },
+    "MiniMax/MiniMax-M3": {
+      family: "minimax",
+      tier: "flagship",
+      inputModalities: MULTIMODAL_INPUT,
+      contextWindowTokens: 196_608,
+    },
+    "doubao-seed-2-0-pro-260215": {
+      family: "doubao",
+      tier: "flagship",
+      inputModalities: MULTIMODAL_INPUT,
+      contextWindowTokens: null,
+    },
+  };
+  return knownModels[modelId] ?? {
+    family: "custom",
+    tier: "custom",
+    inputModalities: TEXT_INPUT,
+    contextWindowTokens: null,
   };
 }
 
 function modelGroup(
-  alias: string,
+  modelId: string,
   routes: ProviderRoute[],
+  identity: ModelIdentity = modelIdentity(modelId),
 ): ModelRouteGroup {
-  return { alias, ...modelPresentation(alias), routes };
+  return {
+    alias: modelId,
+    ...modelPresentation(
+      modelId,
+      identity.family,
+      identity.tier,
+      identity.inputModalities,
+      identity.contextWindowTokens,
+    ),
+    routes,
+  };
 }
 
 function defaultModels(env: NodeJS.ProcessEnv): ModelRouteGroup[] {
@@ -130,6 +243,9 @@ function defaultModels(env: NodeJS.ProcessEnv): ModelRouteGroup[] {
   );
   const siliconflowBaseUrl = normalizeBaseUrl(
     envValue(env.SILICONFLOW_BASE_URL, "https://api.siliconflow.cn"),
+  );
+  const arkBaseUrl = normalizeBaseUrl(
+    envValue(env.ARK_BASE_URL, "https://ark.cn-beijing.volces.com/api"),
   );
 
   const deepseekRoutes = (
@@ -174,62 +290,195 @@ function defaultModels(env: NodeJS.ProcessEnv): ModelRouteGroup[] {
       adapter: "siliconflow",
     },
   ];
-
-  return [
+  const dashscopeDirectRoute = (
+    provider: string,
+    model: string,
+  ): ProviderRoute[] => [
+    {
+      provider,
+      baseUrl: dashscopeBaseUrl,
+      upstreamModel: model,
+      apiKeyEnv: "DASHSCOPE_API_KEYS",
+      priority: 100,
+      adapter: "dashscope",
+    },
+  ];
+  const arkRoute = (model: string): ProviderRoute[] => [
+    {
+      provider: "ark",
+      baseUrl: arkBaseUrl,
+      upstreamModel: model,
+      apiKeyEnv: "ARK_API_KEYS",
+      priority: 100,
+      adapter: "openai",
+      chatCompletionsPath: "/v3/chat/completions",
+    },
+  ];
+  const deepseekFlashModel = envValue(
+    env.MODEL_DEEPSEEK_FLASH,
+    "deepseek-v4-flash",
+  );
+  const deepseekProModel = envValue(
+    env.MODEL_DEEPSEEK_PRO,
+    "deepseek-v4-pro",
+  );
+  const qwenFlashModel = envValue(env.MODEL_QWEN_FLASH, "qwen3.7-flash");
+  const qwenPlusModel = envValue(env.MODEL_QWEN_PLUS, "qwen3.7-plus");
+  const qwenMaxModel = envValue(env.MODEL_QWEN_MAX, "qwen3.7-max");
+  const qwenFlagshipModel = envValue(
+    env.MODEL_QWEN_3_8_MAX,
+    "qwen3.8-max",
+  );
+  const glmModel = envValue(env.MODEL_GLM_5_3, "ZHIPU/GLM-5.3");
+  const kimiModel = envValue(env.MODEL_KIMI_K3, "kimi/kimi-k3");
+  const minimaxModel = envValue(
+    env.MODEL_MINIMAX_M3,
+    "MiniMax/MiniMax-M3",
+  );
+  const doubaoModel = envValue(
+    env.MODEL_DOUBAO_SEED_2_0_PRO,
+    "doubao-seed-2-0-pro-260215",
+  );
+  const models: ModelRouteGroup[] = [
     modelGroup(
-      "deepseek-flash",
+      deepseekFlashModel,
       deepseekRoutes(
-        envValue(env.MODEL_DEEPSEEK_FLASH, "deepseek-v4-flash"),
+        deepseekFlashModel,
         envValue(
           env.SILICONFLOW_MODEL_DEEPSEEK_FLASH,
           "deepseek-ai/DeepSeek-V3.2",
         ),
       ),
+      {
+        family: "deepseek",
+        tier: "flash",
+        inputModalities: TEXT_INPUT,
+        contextWindowTokens: 1_000_000,
+      },
     ),
     modelGroup(
-      "deepseek-pro",
+      deepseekProModel,
       deepseekRoutes(
-        envValue(
-          env.MODEL_DEEPSEEK_PRO ?? env.MODEL_DEEPSEEK,
-          "deepseek-v4-pro",
-        ),
+        deepseekProModel,
         envValue(
           env.SILICONFLOW_MODEL_DEEPSEEK_PRO,
           "Pro/deepseek-ai/DeepSeek-V3.2",
         ),
       ),
+      {
+        family: "deepseek",
+        tier: "pro",
+        inputModalities: TEXT_INPUT,
+        contextWindowTokens: 1_000_000,
+      },
     ),
     modelGroup(
-      "qwen-flash",
+      qwenFlashModel,
       qwenRoutes(
-        envValue(env.MODEL_QWEN_FLASH, "qwen3.7-flash"),
+        qwenFlashModel,
         envValue(
           env.SILICONFLOW_MODEL_QWEN_FLASH,
           "Qwen/Qwen3.5-35B-A3B",
         ),
       ),
+      {
+        family: "qwen",
+        tier: "flash",
+        inputModalities: MULTIMODAL_INPUT,
+        contextWindowTokens: 1_000_000,
+      },
     ),
     modelGroup(
-      "qwen-pro",
+      qwenPlusModel,
       qwenRoutes(
-        envValue(env.MODEL_QWEN_PRO ?? env.MODEL_QWEN, "qwen3.7-plus"),
+        qwenPlusModel,
         envValue(
-          env.SILICONFLOW_MODEL_QWEN_PRO,
+          env.SILICONFLOW_MODEL_QWEN_PLUS,
           "Qwen/Qwen3.5-122B-A10B",
         ),
       ),
+      {
+        family: "qwen",
+        tier: "plus",
+        inputModalities: MULTIMODAL_INPUT,
+        contextWindowTokens: 1_000_000,
+      },
     ),
     modelGroup(
-      "qwen-max",
+      qwenMaxModel,
       qwenRoutes(
-        envValue(env.MODEL_QWEN_MAX, "qwen3.7-max"),
+        qwenMaxModel,
         envValue(
           env.SILICONFLOW_MODEL_QWEN_MAX,
           "Qwen/Qwen3.5-397B-A17B",
         ),
       ),
+      {
+        family: "qwen",
+        tier: "max",
+        inputModalities: MULTIMODAL_INPUT,
+        contextWindowTokens: 1_000_000,
+      },
     ),
   ];
+
+  if (commaList(env.DASHSCOPE_API_KEYS).length > 0) {
+    models.push(
+      modelGroup(
+        qwenFlagshipModel,
+        dashscopeDirectRoute("aliyun", qwenFlagshipModel),
+        {
+          family: "qwen",
+          tier: "flagship",
+          inputModalities: MULTIMODAL_INPUT,
+          contextWindowTokens: 1_000_000,
+        },
+      ),
+      modelGroup(
+        glmModel,
+        dashscopeDirectRoute("aliyun-zhipu", glmModel),
+        {
+          family: "glm",
+          tier: "flagship",
+          inputModalities: TEXT_INPUT,
+          contextWindowTokens: 1_048_576,
+        },
+      ),
+      modelGroup(
+        kimiModel,
+        dashscopeDirectRoute("aliyun-kimi", kimiModel),
+        {
+          family: "kimi",
+          tier: "flagship",
+          inputModalities: MULTIMODAL_INPUT,
+          contextWindowTokens: 1_048_576,
+        },
+      ),
+      modelGroup(
+        minimaxModel,
+        dashscopeDirectRoute("aliyun-minimax", minimaxModel),
+        {
+          family: "minimax",
+          tier: "flagship",
+          inputModalities: MULTIMODAL_INPUT,
+          contextWindowTokens: 196_608,
+        },
+      ),
+    );
+  }
+
+  if (commaList(env.ARK_API_KEYS).length > 0) {
+    models.push(
+      modelGroup(doubaoModel, arkRoute(doubaoModel), {
+        family: "doubao",
+        tier: "flagship",
+        inputModalities: MULTIMODAL_INPUT,
+        contextWindowTokens: null,
+      }),
+    );
+  }
+
+  return models;
 }
 
 function isProviderAdapter(value: unknown): value is ProviderAdapter {
@@ -251,7 +500,10 @@ function isProviderRoute(value: unknown): value is ProviderRoute {
     typeof route.apiKeyEnv === "string" &&
     typeof route.priority === "number" &&
     Number.isFinite(route.priority) &&
-    (route.adapter === undefined || isProviderAdapter(route.adapter))
+    (route.adapter === undefined || isProviderAdapter(route.adapter)) &&
+    (route.chatCompletionsPath === undefined ||
+      (typeof route.chatCompletionsPath === "string" &&
+        route.chatCompletionsPath.startsWith("/")))
   );
 }
 
@@ -265,25 +517,28 @@ function configuredModels(env: NodeJS.ProcessEnv): ModelRouteGroup[] {
       throw new Error("route map must be an object");
     }
 
-    const models = Object.entries(parsed).map(([alias, value]) => {
-      if (!alias.trim() || !Array.isArray(value) || !value.every(isProviderRoute)) {
-        throw new Error(`invalid route group: ${alias}`);
+    const models = Object.entries(parsed).map(([modelId, value]) => {
+      if (
+        !modelId ||
+        modelId !== modelId.trim() ||
+        !Array.isArray(value) ||
+        value.length === 0 ||
+        !value.every(isProviderRoute)
+      ) {
+        throw new Error(`invalid route group: ${modelId}`);
       }
-      const normalizedAlias = alias.trim().toLowerCase();
-      if (normalizedAlias === "deepseek-max") {
+      const routes = value
+        .map((route) => ({
+          ...route,
+          baseUrl: normalizeBaseUrl(route.baseUrl),
+        }))
+        .sort((left, right) => right.priority - left.priority);
+      if (modelId !== routes[0].upstreamModel) {
         throw new Error(
-          "deepseek-max is not an official DeepSeek model alias",
+          `public model id '${modelId}' must match primary upstream model '${routes[0].upstreamModel}'`,
         );
       }
-      return modelGroup(
-        normalizedAlias,
-        value
-          .map((route) => ({
-            ...route,
-            baseUrl: normalizeBaseUrl(route.baseUrl),
-          }))
-          .sort((left, right) => right.priority - left.priority),
-      );
+      return modelGroup(modelId, routes);
     });
 
     if (models.length === 0) throw new Error("route map is empty");
@@ -328,11 +583,12 @@ export function publicModels(
 ): PublicModelRouteGroup[] {
   return config.models.map((model) => ({
     alias: model.alias,
-    compatibilityAliases: model.compatibilityAliases,
     displayName: model.displayName,
     description: model.description,
     family: model.family,
     tier: model.tier,
+    inputModalities: model.inputModalities,
+    contextWindowTokens: model.contextWindowTokens,
     routes: model.routes.map((route) => ({
       provider: route.provider,
       upstreamModel: route.upstreamModel,

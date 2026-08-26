@@ -120,19 +120,30 @@ export function ContestantPlayground({
   }, [onClose, running]);
 
   const selectedModel = useMemo(
-    () => access?.models.find((item) => item.id === model) ?? null,
-    [access, model],
+    () => access.models.find((item) => item.id === model) ?? null,
+    [access.models, model],
   );
   const supportsImage = selectedModel?.inputModalities.includes("image") ?? false;
+  const supportsThinkingToggle = selectedModel?.family === "deepseek" ||
+    selectedModel?.family === "qwen";
+  const supportsTemperatureControl = ![
+    "glm",
+    "kimi",
+    "minimax",
+    "doubao",
+  ].includes(selectedModel?.family ?? "custom");
   const answer = responseText(result?.payload.choices?.[0]?.message?.content);
   const reasoning = responseText(result?.payload.choices?.[0]?.message?.reasoning_content);
 
   function changeModel(nextModel: string) {
     setModel(nextModel);
-    const next = access?.models.find((item) => item.id === nextModel);
+    const next = access.models.find((item) => item.id === nextModel);
     if (!next?.inputModalities.includes("image")) {
       setImage(null);
       setRemoteImageUrl("");
+    }
+    if (next?.family !== "deepseek" && next?.family !== "qwen") {
+      setEnableThinking(false);
     }
   }
 
@@ -159,6 +170,8 @@ export function ContestantPlayground({
     if (!model || !prompt.trim() || running) return;
     const parsed = playgroundRequestSchema.safeParse({
       model,
+      family: selectedModel?.family ?? "custom",
+      supportsImage,
       systemPrompt,
       prompt,
       imageUrl: image?.dataUrl ?? (remoteImageUrl.trim() || null),
@@ -257,7 +270,7 @@ export function ContestantPlayground({
             <label className="playground-field">
               <span>模型</span>
               <select value={model} onChange={(event) => changeModel(event.target.value)}>
-                {access?.models.map((item) => (
+                {access.models.map((item) => (
                   <option key={item.id} value={item.id}>{item.name} · {item.id}</option>
                 ))}
               </select>
@@ -319,15 +332,19 @@ export function ContestantPlayground({
             </div>
 
             <div className="playground-settings">
-              <label className="playground-toggle">
-                <input type="checkbox" checked={enableThinking} onChange={(event) => setEnableThinking(event.target.checked)} />
-                <span aria-hidden="true" />
-                深度思考
-              </label>
-              <label className="playground-range">
-                <span>温度 <output>{temperature.toFixed(1)}</output></span>
-                <input type="range" min="0" max="2" step="0.1" value={temperature} onChange={(event) => setTemperature(Number(event.target.value))} />
-              </label>
+              {supportsThinkingToggle && (
+                <label className="playground-toggle">
+                  <input type="checkbox" checked={enableThinking} onChange={(event) => setEnableThinking(event.target.checked)} />
+                  <span aria-hidden="true" />
+                  深度思考
+                </label>
+              )}
+              {supportsTemperatureControl && (
+                <label className="playground-range">
+                  <span>温度 <output>{temperature.toFixed(1)}</output></span>
+                  <input type="range" min="0" max="2" step="0.1" value={temperature} onChange={(event) => setTemperature(Number(event.target.value))} />
+                </label>
+              )}
               <label className="playground-token-input">
                 <span>最大输出</span>
                 <input type="number" min="128" max="4096" step="128" value={maxTokens} onChange={(event) => setMaxTokens(Number(event.target.value))} />

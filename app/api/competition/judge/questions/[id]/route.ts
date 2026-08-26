@@ -5,16 +5,18 @@ import { z } from "zod";
 import { recordActivity } from "@/lib/competition/activity";
 import { cleanRichText, richTextHasContent } from "@/lib/competition/content";
 import { competitionError, parseJson, requireRole, requireSameOrigin } from "@/lib/competition/http";
-import { closeQuestion, getQuestion, publishQuestion, updateQuestion } from "@/lib/competition/repository";
+import {
+  deleteQuestionWhileStopped,
+  getCompetitionControl,
+  getQuestion,
+  listJudgeQuestions,
+  updateQuestion,
+} from "@/lib/competition/repository";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const updateSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("update"), title: z.string().trim().min(1).max(200), contentHtml: z.string().max(2_000_000), expectedVersion: z.number().int().positive() }),
-  z.object({ action: z.literal("publish"), title: z.string().trim().min(1).max(200), contentHtml: z.string().max(2_000_000), expectedVersion: z.number().int().positive() }),
-  z.object({ action: z.literal("close") }),
-]);
+const updateSchema = z.object({ action: z.literal("update"), title: z.string().trim().min(1).max(200), contentHtml: z.string().max(2_000_000), expectedVersion: z.number().int().positive() });
 
 function numericId(value: string): number | null {
   const id = Number(value);
@@ -43,35 +45,55 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   if (!id) return NextResponse.json({ error: "题目不存在" }, { status: 404 });
   try {
     const input = await parseJson(request, updateSchema);
-    let changed = false;
-    if (input.action === "update" || input.action === "publish") {
-      const contentHtml = cleanRichText(input.contentHtml);
-      if (!richTextHasContent(contentHtml)) return NextResponse.json({ error: "题目内容不能为空" }, { status: 400 });
-      changed = input.action === "update"
-        ? await updateQuestion({ id, title: input.title, contentHtml, expectedVersion: input.expectedVersion })
-        : await publishQuestion({ id, title: input.title, contentHtml, expectedVersion: input.expectedVersion });
-    } else {
-      changed = await closeQuestion(id);
-    }
+    const contentHtml = cleanRichText(input.contentHtml);
+    if (!richTextHasContent(contentHtml)) return NextResponse.json({ error: "题目内容不能为空" }, { status: 400 });
+    const changed = await updateQuestion({ id, title: input.title, contentHtml, expectedVersion: input.expectedVersion });
     if (!changed) return NextResponse.json({ error: "题目已发布、关闭或被其他评委修改，请刷新后重试" }, { status: 409 });
     const question = await getQuestion(id);
     await recordActivity({
       category: "question",
-      action: input.action === "update"
-        ? "question-updated"
-        : input.action === "publish"
-          ? "question-published"
-          : "question-closed",
+      action: "question-updated",
       actorRole: "judge",
       actorId: user.id,
       actorUsername: user.username,
       actorName: user.displayName,
       questionId: id,
       questionTitle: question?.title ?? null,
-      detail: input.action === "close" ? "选手已不能再提交" : null,
+      detail: null,
       outcome: "ok",
     });
     return NextResponse.json({ question });
+  } catch (error) {
+    return competitionError(error);
+  }
+}
+
+export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const originError = requireSameOrigin(request);
+  if (originError) return originError;
+  const user = await requireRole(request, "judge");
+  if (user instanceof NextResponse) return user;
+  const id = numericId((await context.params).id);
+  if (!id) return NextResponse.json({ error: "题目不存在" }, { status: 404 });
+  try {
+    const deleted = await deleteQuestionWhileStopped(id);
+    await recordActivity({
+      category: "question",
+      action: "question-deleted",
+      actorRole: "judge",
+      actorId: user.id,
+      actorUsername: user.username,
+      actorName: user.displayName,
+      questionId: id,
+      questionTitle: deleted.title,
+      detail: deleted.answerCount > 0 ? `同时删除 ${deleted.answerCount} 份已有答卷` : null,
+      outcome: "warn",
+    });
+    const [questions, competition] = await Promise.all([
+      listJudgeQuestions(),
+      getCompetitionControl(),
+    ]);
+    return NextResponse.json({ deleted: { id, ...deleted }, questions, competition });
   } catch (error) {
     return competitionError(error);
   }

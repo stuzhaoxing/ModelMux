@@ -3,6 +3,7 @@
 import {
   Check,
   CheckCircle2,
+  CircleStop,
   Clock3,
   FileEdit,
   FileText,
@@ -12,6 +13,7 @@ import {
   RotateCcw,
   Save,
   Send,
+  TimerReset,
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -33,17 +35,19 @@ import {
   type DraftStorage,
   type LocalAnswerDraft,
 } from "@/lib/competition/local-draft";
-import type { CompetitionQuestion, ContestantAnswer, SessionUser } from "@/lib/competition/types";
+import type { CompetitionControl, CompetitionQuestion, ContestantAnswer, SessionUser } from "@/lib/competition/types";
 import type { OperationMode } from "@/lib/gateway/operation-mode";
 import { apiRequest, formatCompetitionTime } from "./api";
 import { ContestantApiDocs } from "./ContestantApiDocs";
 import { useOperationMode } from "./OperationModeBanner";
 import { PortalFrame } from "./PortalFrame";
+import { PreviewableRichContent } from "./PreviewableRichContent";
 import { RichTextEditor } from "./RichTextEditor";
 
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 
 type DraftRestorePrompt = { questionId: number; draft: LocalAnswerDraft };
+type ContestantWorkspace = { questions: CompetitionQuestion[]; answers: ContestantAnswer[]; competition: CompetitionControl };
 
 // 本机缓存写入编辑器每次改动，600ms 一次就够覆盖断电和误关，
 // 又不会让长答案在每个按键上都做一次序列化。
@@ -65,6 +69,7 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
   const activeView = contestantViewFromPath(pathname);
   const [questions, setQuestions] = useState<CompetitionQuestion[]>([]);
   const [answers, setAnswers] = useState<ContestantAnswer[]>([]);
+  const [competition, setCompetition] = useState<CompetitionControl>({ state: "not_started", durationMinutes: 90, startedAt: null, endsAt: null, stoppedAt: null });
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [contentHtml, setContentHtml] = useState("");
   const [online, setOnline] = useState(false);
@@ -79,6 +84,7 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
   const restorePromptRef = useRef<DraftRestorePrompt | null>(null);
   const pendingDraftRef = useRef<{ questionId: number; contentHtml: string } | null>(null);
   const draftTimerRef = useRef<number | null>(null);
+  const selectedIdRef = useRef<number | null>(null);
   const dirtyRef = useRef(false);
   const savingRef = useRef(false);
   const submittingRef = useRef(false);
@@ -138,21 +144,41 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
   }, [showRestorePrompt, user.id]);
 
   const loadWorkspace = useCallback(async (retainSelection = true) => {
-    const result = await apiRequest<{ questions: CompetitionQuestion[]; answers: ContestantAnswer[] }>("/api/competition/contestant/questions");
+    const result = await apiRequest<ContestantWorkspace>("/api/competition/contestant/questions");
+    const currentId = selectedIdRef.current;
+    const nextId = retainSelection && currentId && result.questions.some((question) => question.id === currentId)
+      ? currentId
+      : result.questions[0]?.id ?? null;
     setQuestions(result.questions);
     setAnswers(result.answers);
-    setSelectedId((current) => retainSelection && current && result.questions.some((question) => question.id === current) ? current : result.questions[0]?.id ?? null);
+    setCompetition(result.competition);
+    if (nextId !== currentId) {
+      flushDraftCache();
+      const nextQuestion = result.questions.find((question) => question.id === nextId) ?? null;
+      const nextAnswer = result.answers.find((answer) => answer.questionId === nextId) ?? null;
+      const nextHtml = nextAnswer?.contentHtml ?? "";
+      setContentHtml(nextHtml);
+      contentRef.current = nextHtml;
+      dirtyRef.current = false;
+      editRevisionRef.current += 1;
+      setSaveState(nextAnswer ? "saved" : "idle");
+      offerLocalDraft(nextQuestion, nextAnswer);
+    }
+    selectedIdRef.current = nextId;
+    setSelectedId(nextId);
     return result;
-  }, []);
+  }, [flushDraftCache, offerLocalDraft]);
 
   useEffect(() => {
-    apiRequest<{ questions: CompetitionQuestion[]; answers: ContestantAnswer[] }>("/api/competition/contestant/questions")
+    apiRequest<ContestantWorkspace>("/api/competition/contestant/questions")
       .then((workspace) => {
         setQuestions(workspace.questions);
         setAnswers(workspace.answers);
+        setCompetition(workspace.competition);
         const firstQuestion = workspace.questions[0];
         const firstAnswer = workspace.answers.find((answer) => answer.questionId === firstQuestion?.id);
         const initialHtml = firstAnswer?.contentHtml ?? "";
+        selectedIdRef.current = firstQuestion?.id ?? null;
         setSelectedId(firstQuestion?.id ?? null);
         setContentHtml(initialHtml);
         contentRef.current = initialHtml;
@@ -164,6 +190,17 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
       .catch((loadError) => setError(loadError instanceof Error ? loadError.message : "题目读取失败"))
       .finally(() => setLoading(false));
   }, [offerLocalDraft]);
+
+  useEffect(() => {
+    if (competition.state !== "running" || !competition.endsAt) return;
+    const endsAt = Date.parse(competition.endsAt);
+    const timer = window.setInterval(() => {
+      if (endsAt > Date.now()) return;
+      window.clearInterval(timer);
+      void loadWorkspace(false);
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, [competition.endsAt, competition.state, loadWorkspace]);
 
   useEffect(() => {
     let source: EventSource | null = null;
@@ -359,6 +396,7 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
     dirtyRef.current = false;
     editRevisionRef.current += 1;
     setSaveState(nextAnswer ? "saved" : "idle");
+    selectedIdRef.current = questionId;
     setSelectedId(questionId);
     offerLocalDraft(questions.find((question) => question.id === questionId) ?? null, nextAnswer ?? null);
   }
@@ -394,7 +432,15 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
 
   return (
     <PortalFrame role="contestant" user={user} online={online} mode={mode} onLogout={() => void logout()} activeView={activeView} onViewChange={(view) => void navigateView(view)}>
-      {activeView === "api-docs" ? <ContestantApiDocs /> : (
+      {activeView === "api-docs" ? <ContestantApiDocs /> : !loading && competition.state !== "running" ? (
+        <main className="contestant-competition-gate">
+          {competition.state === "ended" ? <CircleStop /> : <TimerReset />}
+          <h1>{competition.state === "ended" ? "比赛已结束" : "比赛未开始"}</h1>
+          <p>{competition.state === "ended"
+            ? "题目已停止开放，已保存和提交的答案会继续保留。"
+            : "评委开始比赛后，题目会自动显示。"}</p>
+        </main>
+      ) : (
       <main className="contestant-workspace">
         <aside className="contestant-questions">
           <div className="contestant-aside-heading"><span>考核题目</span><strong>{questions.length}</strong></div>
@@ -421,7 +467,7 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
                   <div><span>考核题目 · {selectedQuestion.status === "published" ? "答题中" : "已关闭"}</span><h1>{selectedQuestion.title}</h1></div>
                   <time><Clock3 />发布于 {formatCompetitionTime(selectedQuestion.publishedAt)}</time>
                 </header>
-                <div className="rich-content question-content" dangerouslySetInnerHTML={{ __html: selectedQuestion.contentHtml }} />
+                <PreviewableRichContent html={selectedQuestion.contentHtml} className="question-content" />
               </article>
 
               <section className="answer-editor-panel">

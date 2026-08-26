@@ -2,8 +2,22 @@ import type { OperationMode } from "./operation-mode";
 
 export type DeploymentMode = "local" | "public";
 
-export type ModelFamily = "deepseek" | "qwen" | "custom";
-export type ModelTier = "flash" | "pro" | "max" | "custom";
+export type ModelFamily =
+  | "deepseek"
+  | "qwen"
+  | "glm"
+  | "kimi"
+  | "minimax"
+  | "doubao"
+  | "custom";
+export type ModelTier =
+  | "flash"
+  | "pro"
+  | "plus"
+  | "max"
+  | "flagship"
+  | "custom";
+export type ModelInputModality = "text" | "image" | "video";
 export type ProviderAdapter =
   | "openai"
   | "deepseek"
@@ -17,15 +31,17 @@ export interface ProviderRoute {
   apiKeyEnv: string;
   priority: number;
   adapter?: ProviderAdapter;
+  chatCompletionsPath?: string;
 }
 
 export interface ModelRouteGroup {
   alias: string;
-  compatibilityAliases: string[];
   displayName: string;
   description: string;
   family: ModelFamily;
   tier: ModelTier;
+  inputModalities: ModelInputModality[];
+  contextWindowTokens: number | null;
   routes: ProviderRoute[];
 }
 
@@ -38,11 +54,12 @@ export interface PublicProviderRoute {
 
 export interface PublicModelRouteGroup {
   alias: string;
-  compatibilityAliases: string[];
   displayName: string;
   description: string;
   family: ModelFamily;
   tier: ModelTier;
+  inputModalities: ModelInputModality[];
+  contextWindowTokens: number | null;
   routes: PublicProviderRoute[];
 }
 

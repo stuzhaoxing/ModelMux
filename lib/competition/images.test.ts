@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { inlineImageData, isStoredImagePath, uploadableImageTypes } from "./images";
+import { inlineImageData, isStoredImagePath, isStoredMediaPath, storedMediaId, uploadableImageTypes } from "./images";
 
 describe("competition images", () => {
   it("only recognises uploaded media paths", () => {
@@ -9,6 +9,9 @@ describe("competition images", () => {
     expect(isStoredImagePath("https://outside.example/x.png")).toBe(false);
     expect(isStoredImagePath("file:///C:/clip_image001.png")).toBe(false);
     expect(isStoredImagePath("")).toBe(false);
+    expect(isStoredMediaPath("/api/competition/media/912")).toBe(true);
+    expect(storedMediaId("/api/competition/media/912")).toBe(912);
+    expect(storedMediaId("/api/competition/media/0")).toBeNull();
   });
 
   it("decodes inline images the server can store", () => {

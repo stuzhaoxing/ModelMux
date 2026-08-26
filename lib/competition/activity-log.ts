@@ -8,8 +8,11 @@ const actionLabels: Record<ActivityAction, string> = {
   "answer-submitted": "提交答卷",
   "question-created": "新建题目",
   "question-updated": "修改题目",
+  "question-deleted": "删除题目",
   "question-published": "发布题目",
   "question-closed": "关闭题目",
+  "competition-started": "开始比赛",
+  "competition-stopped": "停止比赛",
   "model-call": "调用模型",
   "model-rejected": "调用被拒绝",
 };
