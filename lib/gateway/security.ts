@@ -27,9 +27,7 @@ export function bearerToken(request: Request): string | null {
 }
 
 export function clientToken(request: Request): string | null {
-  const bearer = bearerToken(request);
-  if (bearer) return bearer;
-  return request.headers.get("x-api-key")?.trim() || null;
+  return bearerToken(request);
 }
 
 export async function authenticateClient(

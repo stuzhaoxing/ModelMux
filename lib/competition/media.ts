@@ -12,25 +12,29 @@ import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { competitionPool, ensureCompetitionSchema, rows } from "./db";
 import type { CompetitionRole } from "./types";
 
-const allowedTypes = new Map([
+const allowedImageTypes = new Map([
   ["image/jpeg", { extension: "jpg", signatures: [[0xff, 0xd8, 0xff]] }],
   ["image/png", { extension: "png", signatures: [[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]] }],
   ["image/gif", { extension: "gif", signatures: [[0x47, 0x49, 0x46, 0x38, 0x37, 0x61], [0x47, 0x49, 0x46, 0x38, 0x39, 0x61]] }],
   ["image/webp", { extension: "webp", signatures: [[0x52, 0x49, 0x46, 0x46]] }],
 ]);
 
+export type MediaKind = "image" | "file";
+
 interface AttachmentRow extends RowDataPacket {
   uploader_id: number;
   uploader_role: CompetitionRole;
   purpose: "question" | "answer";
+  kind: MediaKind;
   storage_name: string;
   original_name: string;
   mime_type: string;
-  byte_size: number;
+  byte_size: string;
 }
 
-export interface PendingImageUpload {
+export interface PendingMediaUpload {
   purpose: "question" | "answer";
+  kind: MediaKind;
   storageName: string;
   originalName: string;
   mimeType: string;
@@ -38,7 +42,7 @@ export interface PendingImageUpload {
 }
 
 type DiskUploadResult =
-  | { upload: Omit<PendingImageUpload, "purpose">; error?: never }
+  | { upload: Omit<PendingMediaUpload, "purpose">; error?: never }
   | { upload?: never; error: unknown };
 
 function dataDirectory(): string {
@@ -49,7 +53,7 @@ function dataDirectory(): string {
 }
 
 function signatureMatches(buffer: Buffer, mimeType: string): boolean {
-  const config = allowedTypes.get(mimeType);
+  const config = allowedImageTypes.get(mimeType);
   if (!config) return false;
   if (mimeType === "image/webp") {
     return config.signatures.some((signature) => signature.every((value, index) => buffer[index] === value))
@@ -62,14 +66,28 @@ function uploadPath(storageName: string): string {
   return path.join(dataDirectory(), "uploads", storageName);
 }
 
-export async function receiveImageUpload(request: Request): Promise<PendingImageUpload> {
-  if (!request.body) throw new Error("missing_image");
+function safeOriginalName(filename: string): string {
+  const basename = path.basename(filename.replaceAll("\\", "/")).trim() || "未命名附件";
+  return Array.from(basename).slice(0, 255).join("");
+}
+
+function safeMimeType(mimeType: string): string {
+  const normalized = mimeType.trim().toLowerCase();
+  if (normalized.length > 80 || !/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+*-]+$/.test(normalized)) {
+    return "application/octet-stream";
+  }
+  return normalized;
+}
+
+export async function receiveMediaUpload(request: Request): Promise<PendingMediaUpload> {
+  if (!request.body) throw new Error("missing_file");
 
   let parser: ReturnType<typeof Busboy>;
   try {
     parser = Busboy({
       headers: Object.fromEntries(request.headers),
-      limits: { fields: 4, files: 1, parts: 5, fieldSize: 64 * 1024 },
+      defParamCharset: "utf8",
+      limits: { fields: 5, files: 1, parts: 6, fieldSize: 64 * 1024 },
     });
   } catch {
     throw new Error("invalid_multipart");
@@ -78,36 +96,47 @@ export async function receiveImageUpload(request: Request): Promise<PendingImage
   const uploadDirectory = path.join(dataDirectory(), "uploads");
   await mkdir(uploadDirectory, { recursive: true, mode: 0o700 });
 
-  let purpose: PendingImageUpload["purpose"] | null = null;
+  let purpose: PendingMediaUpload["purpose"] | null = null;
+  let kind: MediaKind | null = null;
   let fileSeen = false;
   let parseError: Error | null = null;
-  const uploadState: {
-    promise: Promise<DiskUploadResult> | null;
-  } = { promise: null };
+  const uploadState: { promise: Promise<DiskUploadResult> | null } = { promise: null };
 
   parser.on("field", (name, value) => {
-    if (name !== "purpose") return;
-    if (value === "question" || value === "answer") purpose = value;
-    else parseError ??= new Error("invalid_image_purpose");
+    if (name === "purpose") {
+      if (value === "question" || value === "answer") purpose = value;
+      else parseError ??= new Error("invalid_media_purpose");
+    }
+    if (name === "kind") {
+      if (value === "image" || value === "file") kind = value;
+      else parseError ??= new Error("invalid_media_kind");
+    }
   });
 
   parser.on("file", (fieldName, file, info) => {
     if (fileSeen || fieldName !== "file") {
-      parseError ??= new Error("invalid_image_count");
+      parseError ??= new Error("invalid_file_count");
       file.resume();
       return;
     }
     fileSeen = true;
+    const uploadKind = kind;
+    if (!uploadKind) {
+      parseError ??= new Error("invalid_media_kind");
+      file.resume();
+      return;
+    }
 
-    const mimeType = info.mimeType.toLowerCase();
-    const config = allowedTypes.get(mimeType);
-    if (!config) {
+    const mimeType = safeMimeType(info.mimeType);
+    const imageConfig = allowedImageTypes.get(mimeType);
+    if (uploadKind === "image" && !imageConfig) {
       parseError ??= new Error("unsupported_image");
       file.resume();
       return;
     }
 
-    const storageName = `${Date.now()}-${randomBytes(16).toString("hex")}.${config.extension}`;
+    const extension = uploadKind === "image" ? imageConfig!.extension : "upload";
+    const storageName = `${Date.now()}-${randomBytes(16).toString("hex")}.${extension}`;
     const filePath = uploadPath(storageName);
     let byteSize = 0;
     let prefix = Buffer.alloc(0);
@@ -115,10 +144,7 @@ export async function receiveImageUpload(request: Request): Promise<PendingImage
       transform(chunk: Buffer, _encoding, callback) {
         byteSize += chunk.byteLength;
         if (prefix.byteLength < 12) {
-          prefix = Buffer.concat([
-            prefix,
-            chunk.subarray(0, 12 - prefix.byteLength),
-          ]);
+          prefix = Buffer.concat([prefix, chunk.subarray(0, 12 - prefix.byteLength)]);
         }
         callback(null, chunk);
       },
@@ -130,12 +156,13 @@ export async function receiveImageUpload(request: Request): Promise<PendingImage
       createWriteStream(filePath, { flags: "wx", mode: 0o600 }),
     )
       .then(() => {
-        if (byteSize === 0) throw new Error("empty_image");
-        if (!signatureMatches(prefix, mimeType)) throw new Error("invalid_image");
+        if (uploadKind === "image" && byteSize === 0) throw new Error("empty_image");
+        if (uploadKind === "image" && !signatureMatches(prefix, mimeType)) throw new Error("invalid_image");
         return {
           upload: {
+            kind: uploadKind,
             storageName,
-            originalName: path.basename(info.filename).slice(0, 255) || storageName,
+            originalName: safeOriginalName(info.filename),
             mimeType,
             byteSize,
           },
@@ -148,7 +175,7 @@ export async function receiveImageUpload(request: Request): Promise<PendingImage
   });
 
   parser.on("filesLimit", () => {
-    parseError ??= new Error("invalid_image_count");
+    parseError ??= new Error("invalid_file_count");
   });
   parser.on("fieldsLimit", () => {
     parseError ??= new Error("invalid_multipart");
@@ -157,7 +184,7 @@ export async function receiveImageUpload(request: Request): Promise<PendingImage
     parseError ??= new Error("invalid_multipart");
   });
 
-  let uploaded: Omit<PendingImageUpload, "purpose"> | null = null;
+  let uploaded: Omit<PendingMediaUpload, "purpose"> | null = null;
   try {
     let streamError: unknown = null;
     try {
@@ -174,8 +201,9 @@ export async function receiveImageUpload(request: Request): Promise<PendingImage
     if (diskResult?.error) throw diskResult.error;
     if (streamError) throw streamError;
     if (parseError) throw parseError;
-    if (!purpose) throw new Error("invalid_image_purpose");
-    if (!uploaded) throw new Error("missing_image");
+    if (!purpose) throw new Error("invalid_media_purpose");
+    if (!kind) throw new Error("invalid_media_kind");
+    if (!uploaded) throw new Error("missing_file");
     return { purpose, ...uploaded };
   } catch (error) {
     if (uploaded) await unlink(uploadPath(uploaded.storageName)).catch(() => undefined);
@@ -183,25 +211,33 @@ export async function receiveImageUpload(request: Request): Promise<PendingImage
   }
 }
 
-export async function discardImageUpload(upload: PendingImageUpload): Promise<void> {
+export async function discardMediaUpload(upload: PendingMediaUpload): Promise<void> {
   await unlink(uploadPath(upload.storageName)).catch(() => undefined);
 }
 
-export async function registerImageUpload(input: {
-  upload: PendingImageUpload;
+export async function registerMediaUpload(input: {
+  upload: PendingMediaUpload;
   uploaderId: number;
   uploaderRole: CompetitionRole;
-}): Promise<{ id: number; url: string }> {
+}): Promise<{
+  id: number;
+  url: string;
+  kind: MediaKind;
+  originalName: string;
+  mimeType: string;
+  byteSize: number;
+}> {
   try {
     await ensureCompetitionSchema();
     const [result] = await competitionPool().execute<ResultSetHeader>(
       `INSERT INTO competition_attachments
-        (uploader_id, uploader_role, purpose, storage_name, original_name, mime_type, byte_size)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        (uploader_id, uploader_role, purpose, kind, storage_name, original_name, mime_type, byte_size)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         input.uploaderId,
         input.uploaderRole,
         input.upload.purpose,
+        input.upload.kind,
         input.upload.storageName,
         input.upload.originalName,
         input.upload.mimeType,
@@ -209,24 +245,33 @@ export async function registerImageUpload(input: {
       ],
     );
     const id = Number(result.insertId);
-    return { id, url: `/api/competition/media/${id}` };
+    return {
+      id,
+      url: `/api/competition/media/${id}`,
+      kind: input.upload.kind,
+      originalName: input.upload.originalName,
+      mimeType: input.upload.mimeType,
+      byteSize: input.upload.byteSize,
+    };
   } catch (error) {
-    await discardImageUpload(input.upload);
+    await discardMediaUpload(input.upload);
     throw error;
   }
 }
 
-export async function readImage(id: number): Promise<{
+export async function readMedia(id: number): Promise<{
   stream: NodeReadableStream;
   mimeType: string;
   originalName: string;
-  byteSize: number;
+  byteSize: string;
+  kind: MediaKind;
   uploaderId: number;
   uploaderRole: CompetitionRole;
   purpose: "question" | "answer";
 } | null> {
   const result = await rows<AttachmentRow[]>(
-    `SELECT uploader_id, uploader_role, purpose, storage_name, original_name, mime_type, byte_size
+    `SELECT uploader_id, uploader_role, purpose, kind, storage_name, original_name, mime_type,
+            CAST(byte_size AS CHAR) AS byte_size
      FROM competition_attachments WHERE id = ? LIMIT 1`,
     [id],
   );
@@ -241,7 +286,8 @@ export async function readImage(id: number): Promise<{
       stream: file.readableWebStream({ autoClose: true }),
       mimeType: record.mime_type,
       originalName: record.original_name,
-      byteSize: Number(record.byte_size),
+      byteSize: String(record.byte_size),
+      kind: record.kind,
       uploaderId: Number(record.uploader_id),
       uploaderRole: record.uploader_role,
       purpose: record.purpose,
@@ -252,20 +298,34 @@ export async function readImage(id: number): Promise<{
   }
 }
 
-export async function contestantCanReadImage(
-  imageId: number,
+export async function contestantCanReadMedia(
+  mediaId: number,
   contestantId: number,
-  image: { uploaderId: number; uploaderRole: CompetitionRole; purpose: "question" | "answer" },
+  media: { uploaderId: number; uploaderRole: CompetitionRole; purpose: "question" | "answer" },
 ): Promise<boolean> {
-  if (image.uploaderRole === "contestant") return image.uploaderId === contestantId;
-  if (image.purpose !== "question") return false;
+  if (media.uploaderRole === "contestant") return media.uploaderId === contestantId;
+  if (media.purpose !== "question") return false;
   const matches = await rows<(RowDataPacket & { allowed: number })[]>(
     `SELECT EXISTS(
        SELECT 1 FROM competition_questions
        WHERE status IN ('published', 'closed')
-         AND LOCATE(CONCAT('src="/api/competition/media/', ?, '"'), content_html) > 0
+         AND EXISTS(
+           SELECT 1 FROM competition_control
+           WHERE id = 1 AND status = 'running'
+             AND started_at <= CURRENT_TIMESTAMP(3)
+             AND ends_at > CURRENT_TIMESTAMP(3)
+         )
+         AND (
+           LOCATE(CONCAT('src="/api/competition/media/', ?, '"'), content_html) > 0
+           OR LOCATE(CONCAT('href="/api/competition/media/', ?, '"'), content_html) > 0
+         )
      ) AS allowed`,
-    [imageId],
+    [mediaId, mediaId],
   );
   return Boolean(matches[0]?.allowed);
+}
+
+export function mediaContentDisposition(kind: MediaKind, originalName: string): string {
+  const disposition = kind === "image" ? "inline" : "attachment";
+  return `${disposition}; filename="download"; filename*=UTF-8''${encodeURIComponent(originalName)}`;
 }

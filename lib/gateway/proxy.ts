@@ -1,9 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import {
-  convertAnthropicRequest,
-  convertOpenAIResponseToAnthropic,
-} from "./anthropic";
 import { loadGatewayConfig, providerKeys } from "./config";
 import { errorResponse, optionsResponse, withCors } from "./http";
 import {
@@ -21,9 +17,11 @@ import { gatewayServiceState } from "./service-state";
 import { recordActivity } from "../competition/activity";
 import { modelCallDetail, outcomeForStatus } from "../competition/activity-log";
 import {
+  recordContestantTokenUsage,
   releaseContestantApiRequest,
   reserveContestantApiRequest,
 } from "../competition/repository";
+import { meterTokenUsage } from "./token-usage";
 import type {
   GatewayConfig,
   ModelRouteGroup,
@@ -98,10 +96,7 @@ function requestHeaders(request: Request, providerKey: string): Headers {
     const lower = name.toLowerCase();
     if (
       HOP_BY_HOP_HEADERS.has(lower) ||
-      lower === "authorization" ||
-      lower === "x-api-key" ||
-      lower === "anthropic-version" ||
-      lower === "anthropic-beta"
+      lower === "authorization"
     ) return;
     headers.set(name, value);
   });
@@ -129,14 +124,7 @@ function resolveModel(
   config: GatewayConfig,
 ): ModelRouteGroup | null {
   if (typeof requested !== "string") return null;
-  const normalized = requested.trim().toLowerCase();
-  return (
-    config.models.find(
-      (model) =>
-        model.alias.toLowerCase() === normalized ||
-        model.compatibilityAliases.some((alias) => alias === normalized),
-    ) ?? null
-  );
+  return config.models.find((model) => model.alias === requested) ?? null;
 }
 
 function providerAdapter(route: ProviderRoute): ProviderAdapter {
@@ -171,6 +159,16 @@ function providerPayload(
   } else if (model.family === "qwen") {
     delete adapted.thinking;
     delete adapted.reasoning_effort;
+  }
+
+  if (adapted.stream === true) {
+    const streamOptions = adapted.stream_options;
+    adapted.stream_options = {
+      ...(streamOptions && typeof streamOptions === "object" && !Array.isArray(streamOptions)
+        ? streamOptions as Record<string, unknown>
+        : {}),
+      include_usage: true,
+    };
   }
 
   return adapted;
@@ -470,16 +468,19 @@ async function proxyChatCompletionsForClient(
   for (let index = 0; index < attempts.length; index += 1) {
     const { route, key } = attempts[index];
     try {
-      const upstream = await fetch(`${route.baseUrl}/v1/chat/completions`, {
-        method: "POST",
-        headers: requestHeaders(request, key),
-        body: JSON.stringify(
-          providerPayload(prepared.payload, prepared.model, route),
-        ),
-        cache: "no-store",
-        redirect: "error",
-        signal: AbortSignal.timeout(config.requestTimeoutMs),
-      });
+      const upstream = await fetch(
+        `${route.baseUrl}${route.chatCompletionsPath ?? "/v1/chat/completions"}`,
+        {
+          method: "POST",
+          headers: requestHeaders(request, key),
+          body: JSON.stringify(
+            providerPayload(prepared.payload, prepared.model, route),
+          ),
+          cache: "no-store",
+          redirect: "error",
+          signal: AbortSignal.timeout(config.requestTimeoutMs),
+        },
+      );
       lastStatus = upstream.status;
       lastErrorCode = upstream.status === 429 ? "upstream_rate_limited" : "upstream_error";
 
@@ -522,8 +523,15 @@ async function proxyChatCompletionsForClient(
       if (quotaRemaining !== null) {
         headers.set("X-Quota-Remaining", String(quotaRemaining));
       }
+      const responseBody = upstream.ok && upstream.body && client.contestantId !== null
+        ? meterTokenUsage(
+            upstream.body,
+            prepared.payload.stream === true,
+            (usage) => recordContestantTokenUsage(client.contestantId!, usage),
+          )
+        : upstream.body;
       return withCors(
-        new Response(upstream.body, { status: upstream.status, headers }),
+        new Response(responseBody, { status: upstream.status, headers }),
         request,
         config,
       );
@@ -584,55 +592,4 @@ async function proxyChatCompletionsForClient(
 
 export async function proxyChatCompletions(request: Request): Promise<Response> {
   return proxyChatCompletionsForClient(request);
-}
-
-export async function proxyAnthropicMessages(
-  request: Request,
-): Promise<Response> {
-  let publicModel = "";
-  const response = await proxyChatCompletionsForClient(
-    request,
-    undefined,
-    async (incoming, config) => {
-      if (!incoming.headers.get("anthropic-version")) {
-        return errorResponse(
-          400,
-          "invalid_request_error",
-          "缺少 anthropic-version 请求头。",
-        );
-      }
-      const body = await readJsonPayload(incoming, config);
-      if (body instanceof Response) return body;
-      const converted = convertAnthropicRequest(body);
-      if ("code" in converted) {
-        return errorResponse(400, converted.code, converted.message);
-      }
-      const requestedModel = resolveModel(converted.payload.model, config);
-      if (converted.hasImage && requestedModel?.family !== "qwen") {
-        return errorResponse(
-          400,
-          "model_not_allowed",
-          "当前模型不支持 Anthropic Messages 格式的 image 内容块，请改用 Qwen。",
-        );
-      }
-      if (requestedModel && converted.thinkingEnabled !== null) {
-        if (requestedModel.family === "qwen") {
-          converted.payload.enable_thinking = converted.thinkingEnabled;
-          if (converted.thinkingBudget !== null) {
-            converted.payload.thinking_budget = converted.thinkingBudget;
-          }
-        } else if (requestedModel.family === "deepseek") {
-          converted.payload.thinking = {
-            type: converted.thinkingEnabled ? "enabled" : "disabled",
-          };
-        }
-      }
-      const prepared = preparePayload(converted.payload, config);
-      if (prepared instanceof Response) return prepared;
-      publicModel = prepared.model.alias;
-      return prepared;
-    },
-  );
-  if (request.method === "OPTIONS") return response;
-  return convertOpenAIResponseToAnthropic(response, publicModel);
 }

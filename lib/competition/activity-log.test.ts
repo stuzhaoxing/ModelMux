@@ -10,6 +10,9 @@ import {
 describe("competition activity log", () => {
   it("labels every recorded action in Chinese", () => {
     expect(activityActionLabel("answer-submitted")).toBe("提交答卷");
+    expect(activityActionLabel("question-deleted")).toBe("删除题目");
+    expect(activityActionLabel("competition-started")).toBe("开始比赛");
+    expect(activityActionLabel("competition-stopped")).toBe("停止比赛");
     expect(activityActionLabel("model-rejected")).toBe("调用被拒绝");
     expect(activityActionLabel("unknown-action")).toBe("unknown-action");
   });

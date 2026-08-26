@@ -20,4 +20,25 @@ describe("competition rich text", () => {
     expect(richTextHasContent("<p>回答</p>")).toBe(true);
     expect(richTextHasContent('<img src="/api/competition/media/1">')).toBe(true);
   });
+
+  it("keeps uploaded attachment cards and their download metadata", () => {
+    const html = cleanRichText(
+      '<a class="rich-attachment" href="/api/competition/media/21" data-attachment-id="21" data-attachment-name="考核材料.pdf" data-attachment-size="7340032" data-attachment-type="application/pdf"><span class="attachment-type">PDF</span><span class="attachment-details"><strong>考核材料.pdf</strong><small>7 MB</small></span><span class="attachment-download">下载</span></a>',
+    );
+
+    expect(html).toContain('class="rich-attachment"');
+    expect(html).toContain('href="/api/competition/media/21"');
+    expect(html).toContain('download="考核材料.pdf"');
+    expect(html).toContain('data-attachment-size="7340032"');
+    expect(richTextHasContent(html)).toBe(true);
+  });
+
+  it("does not preserve forged external attachment cards", () => {
+    const html = cleanRichText(
+      '<a class="rich-attachment" href="https://outside.example/payload.html" data-attachment-id="21" data-attachment-name="payload.html"><span class="attachment-download">下载</span></a>',
+    );
+
+    expect(html).not.toContain("rich-attachment");
+    expect(html).not.toContain("outside.example");
+  });
 });

@@ -7,9 +7,12 @@ import {
   FileEdit,
   FilePlus2,
   Gavel,
+  LayoutDashboard,
+  LoaderCircle,
   LockKeyhole,
   RefreshCw,
   Send,
+  Trash2,
   UsersRound,
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
@@ -21,10 +24,11 @@ import {
   type JudgeView,
 } from "@/lib/competition/navigation";
 import { eventStreamRetryDelayMs } from "@/lib/competition/event-stream";
-import type { ActivityEntry, CompetitionQuestion, JudgeAnswerRow, JudgeQuestion, SessionUser } from "@/lib/competition/types";
+import type { ActivityEntry, CompetitionControl, CompetitionQuestion, JudgeAnswerRow, JudgeQuestion, SessionUser } from "@/lib/competition/types";
 import type { OperationMode } from "@/lib/gateway/operation-mode";
 import { apiRequest, formatCompetitionTime } from "./api";
 import { JudgeActivityLog } from "./JudgeActivityLog";
+import { JudgeDashboard } from "./JudgeDashboard";
 import { useOperationMode } from "./OperationModeBanner";
 import { PortalFrame } from "./PortalFrame";
 import { RichTextEditor } from "./RichTextEditor";
@@ -39,6 +43,8 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
   const answerRefreshTimerRef = useRef<number | null>(null);
   const queueRefreshTimerRef = useRef<number | null>(null);
   const [questions, setQuestions] = useState<JudgeQuestion[]>([]);
+  const [competition, setCompetition] = useState<CompetitionControl>({ state: "not_started", durationMinutes: 90, startedAt: null, endsAt: null, stoppedAt: null });
+  const [durationInput, setDurationInput] = useState("90");
   const [selectedId, setSelectedId] = useState<number | "new" | null>(null);
   const [answers, setAnswers] = useState<JudgeAnswerRow[]>([]);
   const [selectedContestantId, setSelectedContestantId] = useState<number | null>(null);
@@ -59,11 +65,14 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
 
   const selectedQuestion = selectedId === "new" ? null : questions.find((item) => item.id === selectedId) ?? null;
   const selectedAnswer = answers.find((item) => item.contestantId === selectedContestantId) ?? null;
-  const questionEditable = selectedId === "new" || selectedQuestion?.status === "draft";
+  const questionSetEditable = questions.every((question) => question.status === "draft");
+  const questionEditable = questionSetEditable && (selectedId === "new" || selectedQuestion?.status === "draft");
 
   const loadQuestions = useCallback(async (retainSelection = true) => {
-    const result = await apiRequest<{ questions: JudgeQuestion[] }>("/api/competition/judge/questions");
+    const result = await apiRequest<JudgeQuestionsResponse>("/api/competition/judge/questions");
     setQuestions(result.questions);
+    setCompetition(result.competition);
+    if (result.competition.state !== "running") setDurationInput(String(result.competition.durationMinutes));
     setSelectedId((current) => {
       if (current === "new") return current;
       if (retainSelection && current && result.questions.some((item) => item.id === current)) return current;
@@ -116,9 +125,11 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
   }, [activity, loadingOlder, mergeActivity]);
 
   useEffect(() => {
-    apiRequest<{ questions: JudgeQuestion[] }>("/api/competition/judge/questions")
+    apiRequest<JudgeQuestionsResponse>("/api/competition/judge/questions")
       .then(async (workspace) => {
         setQuestions(workspace.questions);
+        setCompetition(workspace.competition);
+        if (workspace.competition.state !== "running") setDurationInput(String(workspace.competition.durationMinutes));
         const requestedFirst = initialViewRef.current === "answers"
           ? workspace.questions.find((question) => question.status !== "draft")
           : workspace.questions[0];
@@ -190,6 +201,14 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
         const entries = JSON.parse((event as MessageEvent).data) as ActivityEntry[];
         mergeActivity(entries);
         setActivityTotal((current) => current + entries.length);
+        const deletedQuestionIds = entries
+          .filter((entry) => entry.action === "question-deleted" && entry.questionId !== null)
+          .map((entry) => entry.questionId);
+        if (typeof selectedId === "number" && deletedQuestionIds.includes(selectedId)) {
+          window.location.reload();
+        } else if (deletedQuestionIds.length > 0) {
+          void loadQuestions(true);
+        }
       });
       stream.addEventListener("question-updated", () => void loadQuestions(true));
       stream.addEventListener("answer-updated", (event) => {
@@ -229,7 +248,7 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
     drafting: answers.filter((answer) => answer.status === "draft").length,
   }), [answers]);
 
-  async function saveQuestion(publish: boolean) {
+  async function saveQuestion() {
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -237,7 +256,7 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
       if (selectedId === "new") {
         const result = await apiRequest<{ id: number; question: CompetitionQuestion }>("/api/competition/judge/questions", {
           method: "POST",
-          body: JSON.stringify({ title, contentHtml, publish }),
+          body: JSON.stringify({ title, contentHtml }),
         });
         await loadQuestions(false);
         setSelectedId(result.id);
@@ -248,7 +267,7 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
         const result = await apiRequest<{ question: CompetitionQuestion }>(`/api/competition/judge/questions/${selectedQuestion.id}`, {
           method: "PATCH",
           body: JSON.stringify({
-            action: publish ? "publish" : "update",
+            action: "update",
             title,
             contentHtml,
             expectedVersion: editorVersionRef.current ?? selectedQuestion.version,
@@ -259,7 +278,7 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
         editorVersionRef.current = result.question.version;
         await loadQuestions(true);
       }
-      setNotice(publish ? "题目已发布" : "题目已保存");
+      setNotice("题目已保存为草稿");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "题目保存失败");
     } finally {
@@ -267,16 +286,101 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
     }
   }
 
-  async function closeCurrentQuestion() {
-    if (!selectedQuestion || !window.confirm("关闭后选手将不能继续修改或提交，确认关闭这道题目？")) return;
+  async function startCompetition() {
+    const durationMinutes = Number(durationInput);
+    if (!Number.isSafeInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 24 * 60) {
+      setError("比赛时长必须是 1 到 1440 分钟之间的整数");
+      return;
+    }
+    if (!window.confirm(`开始后，选手将立即看到全部题目并可以作答，本次比赛限时 ${durationMinutes} 分钟。确认开始？`)) return;
     setSaving(true);
+    setError(null);
+    setNotice(null);
     try {
-      const result = await apiRequest<{ question: CompetitionQuestion }>(`/api/competition/judge/questions/${selectedQuestion.id}`, { method: "PATCH", body: JSON.stringify({ action: "close" }) });
-      editorVersionRef.current = result.question.version;
-      await loadQuestions(true);
-      setNotice("题目已关闭");
-    } catch (closeError) {
-      setError(closeError instanceof Error ? closeError.message : "题目关闭失败");
+      const result = await apiRequest<JudgeQuestionsResponse>(
+        "/api/competition/judge/competition/start",
+        { method: "POST", body: JSON.stringify({ durationMinutes }) },
+      );
+      setQuestions(result.questions);
+      setCompetition(result.competition);
+      setDurationInput(String(result.competition.durationMinutes));
+      setNotice(`比赛已开始，选手可见 ${result.questions.length} 道题目`);
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : "开始比赛失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function stopCompetition() {
+    if (!window.confirm("停止后，选手将立即看不到题目且不能继续保存或提交答案。已有答案会保留，确认停止比赛？")) return;
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await apiRequest<JudgeQuestionsResponse>(
+        "/api/competition/judge/competition/stop",
+        { method: "POST" },
+      );
+      setQuestions(result.questions);
+      setCompetition(result.competition);
+      setDurationInput(String(result.competition.durationMinutes));
+      setNotice("比赛已停止，题目已对选手隐藏");
+    } catch (stopError) {
+      setError(stopError instanceof Error ? stopError.message : "停止比赛失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteSelectedQuestion() {
+    const question = selectedQuestion;
+    if (!question || competition.state === "running") {
+      setError("比赛进行中不能删除题目，请先停止比赛");
+      return;
+    }
+    const savedAnswerCount = question.progress.submitted + question.progress.drafting;
+    const answerWarning = savedAnswerCount > 0
+      ? `该题已有 ${savedAnswerCount} 份已保存或已提交答卷，也会一并永久删除。`
+      : "";
+    if (!window.confirm(`确认删除题目《${question.title}》？${answerWarning}此操作无法恢复。`)) return;
+
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await apiRequest<DeleteQuestionResponse>(
+        `/api/competition/judge/questions/${question.id}`,
+        { method: "DELETE" },
+      );
+      setQuestions(result.questions);
+      setCompetition(result.competition);
+      setAnswers([]);
+      setSelectedContestantId(null);
+
+      const nextQuestion = result.questions[0] ?? null;
+      if (nextQuestion) {
+        setSelectedId(nextQuestion.id);
+        setTitle(nextQuestion.title);
+        setContentHtml(nextQuestion.contentHtml);
+        editorVersionRef.current = nextQuestion.version;
+        if (nextQuestion.status === "draft") {
+          window.history.replaceState(null, "", judgeViewRoutes.questions);
+        } else {
+          void loadAnswers(nextQuestion.id).catch((loadError) => {
+            setError(loadError instanceof Error ? loadError.message : "下一题答卷读取失败");
+          });
+        }
+      } else {
+        setSelectedId("new");
+        setTitle("");
+        setContentHtml("");
+        editorVersionRef.current = null;
+        window.history.replaceState(null, "", judgeViewRoutes.dashboard);
+      }
+      setNotice(`题目《${result.deleted.title}》已删除${result.deleted.answerCount > 0 ? `，同时删除 ${result.deleted.answerCount} 份答卷` : ""}`);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "删除题目失败");
     } finally {
       setSaving(false);
     }
@@ -317,6 +421,10 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
   }
 
   function createQuestion() {
+    if (!questionSetEditable) {
+      setError("题目已经统一发布，不能再新增题目");
+      return;
+    }
     setTitle("");
     setContentHtml("");
     setAnswers([]);
@@ -328,11 +436,11 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
 
   return (
     <PortalFrame role="judge" user={user} online={online} mode={mode} onLogout={() => void logout()}>
-      <main className={`judge-workspace ${logCollapsed ? "log-collapsed" : ""}`}>
+      <main className={`judge-workspace ${view === "dashboard" ? "dashboard-view" : ""} ${logCollapsed ? "log-collapsed" : ""}`}>
         <aside className="question-queue">
           <div className="queue-heading">
             <span><small>考核题目</small><strong>{questions.length} 道</strong></span>
-            <button type="button" className="square-action" onClick={createQuestion}><FilePlus2 />新建题目</button>
+            <button type="button" className="square-action" disabled={!questionSetEditable} title={questionSetEditable ? "新建题目" : "题目已统一发布"} onClick={createQuestion}><FilePlus2 />新建题目</button>
           </div>
           <div className="question-list">
             {questions.map((question) => (
@@ -342,10 +450,10 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
                 className={`question-list-item ${selectedId === question.id ? "active" : ""}`}
                 onClick={() => selectQuestion(question)}
               >
-                <span className={`question-status ${question.status}`} />
+                <span className={`question-status ${question.status === "draft" ? "draft" : competition.state}`} />
                 <span>
                   <strong>{question.title}</strong>
-                  <small>{statusLabel(question.status)} · {formatCompetitionTime(question.publishedAt ?? question.createdAt)}</small>
+                  <small>{questionQueueStatusLabel(question.status, competition.state)} · {formatCompetitionTime(question.publishedAt ?? question.createdAt)}</small>
                   <QuestionProgress question={question} />
                 </span>
               </button>
@@ -357,23 +465,43 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
         <section className="judge-main">
           <div className="judge-toolbar">
             <div className="view-tabs" role="tablist">
+              <button type="button" className={view === "dashboard" ? "active" : ""} onClick={() => navigateView("dashboard")}><LayoutDashboard />总览</button>
               <button type="button" className={view === "questions" ? "active" : ""} onClick={() => navigateView("questions")}><Gavel />题目内容</button>
               <button type="button" disabled={!selectedQuestion || selectedQuestion.status === "draft"} className={view === "answers" ? "active" : ""} onClick={() => navigateView("answers")}><UsersRound />答题进度</button>
             </div>
             <div className="judge-actions">
-              {selectedQuestion?.status === "published" && <button type="button" className="secondary-action danger" disabled={saving} onClick={() => void closeCurrentQuestion()}><LockKeyhole />关闭题目</button>}
               {view === "questions" && questionEditable && (
-                <>
-                  <button type="button" className="secondary-action" disabled={saving} onClick={() => void saveQuestion(false)}><FileEdit />保存</button>
-                  {(selectedId === "new" || selectedQuestion?.status === "draft") && <button type="button" className="primary-action" disabled={saving} onClick={() => void saveQuestion(true)}><Send />发布题目</button>}
-                </>
+                <button type="button" className="primary-action" disabled={saving} onClick={() => void saveQuestion()}><FileEdit />保存题目</button>
               )}
-              {view === "answers" && typeof selectedId === "number" && <button type="button" className="square-action light" onClick={() => { void loadAnswers(selectedId); void loadQuestions(true); }}><RefreshCw />刷新答卷</button>}
+              {view === "answers" && competition.state !== "running" && typeof selectedId === "number" && (
+                <button type="button" className="secondary-action danger" disabled={saving} onClick={() => void deleteSelectedQuestion()}>
+                  {saving ? <LoaderCircle className="spinning" /> : <Trash2 />}
+                  {saving ? "正在删除" : "删除题目"}
+                </button>
+              )}
+              {view === "answers" && typeof selectedId === "number" && <button type="button" className="square-action light" disabled={saving} onClick={() => { void loadAnswers(selectedId); void loadQuestions(true); }}><RefreshCw />刷新答卷</button>}
             </div>
           </div>
           {(error || notice) && <div className={`workspace-message ${error ? "error" : "success"}`} role="status">{error ?? notice}</div>}
 
-          {view === "questions" ? (
+          {view === "dashboard" ? (
+            <JudgeDashboard
+              questions={questions}
+              loading={loading}
+              competition={competition}
+              durationInput={durationInput}
+              competitionPending={saving}
+              canCreateQuestions={questionSetEditable}
+              onOpenQuestion={selectQuestion}
+              onCreateQuestion={createQuestion}
+              onDurationChange={setDurationInput}
+              onStartCompetition={() => void startCompetition()}
+              onStopCompetition={() => void stopCompetition()}
+              onCompetitionExpired={() => void loadQuestions(true).catch((loadError) => {
+                setError(loadError instanceof Error ? loadError.message : "比赛状态刷新失败");
+              })}
+            />
+          ) : view === "questions" ? (
             <div className="question-composer">
               <div className="composer-meta">
                 <label>题目标题<input maxLength={200} value={title} disabled={!questionEditable} onChange={(event) => setTitle(event.target.value)} placeholder="输入考核题目标题" /></label>
@@ -437,6 +565,19 @@ interface ActivityPage {
   reachedStart: boolean;
 }
 
+interface JudgeQuestionsResponse {
+  questions: JudgeQuestion[];
+  competition: CompetitionControl;
+}
+
+interface DeleteQuestionResponse extends JudgeQuestionsResponse {
+  deleted: {
+    id: number;
+    title: string;
+    answerCount: number;
+  };
+}
+
 function QuestionProgress({ question }: { question: JudgeQuestion }) {
   const { total, submitted, drafting, notStarted } = question.progress;
   return (
@@ -459,6 +600,14 @@ function QuestionProgress({ question }: { question: JudgeQuestion }) {
 
 function statusLabel(status: CompetitionQuestion["status"]): string {
   return status === "draft" ? "草稿" : status === "published" ? "答题中" : "已关闭";
+}
+
+function questionQueueStatusLabel(
+  questionStatus: CompetitionQuestion["status"],
+  competitionState: CompetitionControl["state"],
+): string {
+  if (questionStatus === "draft") return "草稿";
+  return competitionState === "running" ? "作答中" : competitionState === "ended" ? "已停止" : "未开始";
 }
 
 function answerStatusLabel(status: JudgeAnswerRow["status"]): string {

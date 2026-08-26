@@ -28,7 +28,7 @@ export function corsHeaders(request: Request, config: GatewayConfig): Headers {
     headers.set("Vary", "Origin");
     headers.set(
       "Access-Control-Allow-Headers",
-      "Authorization, Content-Type, X-Api-Key, Anthropic-Version, Anthropic-Beta",
+      "Authorization, Content-Type",
     );
     headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     headers.set("Access-Control-Max-Age", "86400");

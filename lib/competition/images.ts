@@ -1,5 +1,5 @@
-/** 富文本里唯一能长期保存的图片地址：上传后由 /api/competition/media 提供。 */
-const storedImagePath = /^\/api\/competition\/media\/\d+$/;
+/** 富文本里唯一能长期保存的媒体地址：上传后由 /api/competition/media 提供。 */
+const storedMediaPath = /^\/api\/competition\/media\/(\d+)$/;
 
 /** 编辑器允许上传、服务端也接受的图片类型。 */
 export const uploadableImageTypes = new Map([
@@ -10,7 +10,18 @@ export const uploadableImageTypes = new Map([
 ]);
 
 export function isStoredImagePath(src: string): boolean {
-  return storedImagePath.test(src);
+  return isStoredMediaPath(src);
+}
+
+export function isStoredMediaPath(src: string): boolean {
+  return storedMediaPath.test(src);
+}
+
+export function storedMediaId(src: string): number | null {
+  const match = storedMediaPath.exec(src);
+  if (!match) return null;
+  const id = Number(match[1]);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
 /**

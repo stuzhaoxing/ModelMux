@@ -24,10 +24,13 @@ describe("competition portal navigation", () => {
   });
 
   it("maps judge routes to their visible tab", () => {
+    expect(judgeViewRoutes.dashboard).toBe("/judge/dashboard");
     expect(judgeViewRoutes.questions).toBe("/judge/questions");
     expect(judgeViewRoutes.answers).toBe("/judge/answers");
+    expect(judgeViewFromPath("/judge/dashboard")).toBe("dashboard");
     expect(judgeViewFromPath("/judge/answers")).toBe("answers");
     expect(judgeViewFromPath("/judge/questions")).toBe("questions");
+    expect(isJudgeView("dashboard")).toBe(true);
     expect(isJudgeView("answers")).toBe(true);
     expect(isJudgeView("unknown")).toBe(false);
   });
@@ -42,9 +45,9 @@ describe("competition portal navigation", () => {
   });
 
   it("sends each role to its own home after login", () => {
-    expect(roleHomeRoutes.judge).toBe("/judge/questions");
+    expect(roleHomeRoutes.judge).toBe("/judge/dashboard");
     expect(roleHomeRoutes.contestant).toBe("/contestant/questions");
-    expect(loginRedirectTarget("judge", null)).toBe("/judge/questions");
+    expect(loginRedirectTarget("judge", null)).toBe("/judge/dashboard");
     expect(loginRedirectTarget("contestant", undefined)).toBe("/contestant/questions");
     expect(loginRedirectTarget("contestant", "/contestant/api-docs")).toBe("/contestant/api-docs");
     expect(loginRedirectTarget("judge", "/judge/answers?q=2")).toBe("/judge/answers?q=2");
@@ -55,7 +58,7 @@ describe("competition portal navigation", () => {
     expect(loginRedirectTarget("contestant", "//evil.example/x")).toBe("/contestant/questions");
     expect(loginRedirectTarget("contestant", "/\\evil.example")).toBe("/contestant/questions");
     expect(loginRedirectTarget("contestant", "/judge/answers")).toBe("/contestant/questions");
-    expect(loginRedirectTarget("judge", "/admin")).toBe("/judge/questions");
-    expect(loginRedirectTarget("judge", "/contestant/questions")).toBe("/judge/questions");
+    expect(loginRedirectTarget("judge", "/admin")).toBe("/judge/dashboard");
+    expect(loginRedirectTarget("judge", "/contestant/questions")).toBe("/judge/dashboard");
   });
 });

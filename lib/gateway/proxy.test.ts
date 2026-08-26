@@ -6,13 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   authenticateContestantApiKey,
+  recordContestantTokenUsage,
   releaseContestantApiRequest,
   reserveContestantApiRequest,
 } from "../competition/repository";
-import {
-  proxyAnthropicMessages,
-  proxyChatCompletions,
-} from "./proxy";
+import { proxyChatCompletions } from "./proxy";
 import { setOperationMode } from "./operation-mode";
 import { setGatewayServiceEnabled } from "./service-state";
 
@@ -21,10 +19,15 @@ vi.mock("../competition/repository", async (importOriginal) => {
   return {
     ...original,
     authenticateContestantApiKey: vi.fn(),
+    recordContestantTokenUsage: vi.fn(),
     reserveContestantApiRequest: vi.fn(),
     releaseContestantApiRequest: vi.fn(),
   };
 });
+
+vi.mock("../competition/activity", () => ({
+  recordActivity: vi.fn(),
+}));
 
 const ENV_KEYS = [
   "MODELMUX_ALLOW_ANONYMOUS",
@@ -37,10 +40,11 @@ const ENV_KEYS = [
   "DEEPSEEK_API_KEYS",
   "DASHSCOPE_API_KEYS",
   "SILICONFLOW_API_KEYS",
+  "ARK_API_KEYS",
 ];
 
 function request(
-  model = "deepseek",
+  model = "deepseek-v4-pro",
   key = "client-secret",
   stream = false,
 ): Request {
@@ -58,47 +62,6 @@ function request(
   });
 }
 
-function anthropicRequest(
-  mode: "text" | "image",
-  options?: {
-    stream?: boolean;
-    key?: string;
-    model?: string;
-    includeVersion?: boolean;
-  },
-): Request {
-  const content = mode === "text"
-    ? "hello"
-    : [
-        {
-          type: "image",
-          source: {
-            type: "base64",
-            media_type: "image/png",
-            data: "aGVsbG8=",
-          },
-        },
-        { type: "text", text: "describe this image" },
-      ];
-  return new Request("http://localhost:4000/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": options?.key ?? "client-secret",
-      "Content-Type": "application/json",
-      ...(options?.includeVersion === false
-        ? {}
-        : { "anthropic-version": "2023-06-01" }),
-    },
-    body: JSON.stringify({
-      model: options?.model ?? "qwen-flash",
-      max_tokens: 128,
-      system: "Answer briefly.",
-      messages: [{ role: "user", content }],
-      stream: options?.stream === true,
-    }),
-  });
-}
-
 describe.sequential("chat completion proxy", () => {
   let dataDirectory: string;
 
@@ -111,6 +74,7 @@ describe.sequential("chat completion proxy", () => {
     process.env.SILICONFLOW_API_KEYS = "provider-secret";
     process.env.MODELMUX_RATE_LIMIT_RPM = "60";
     vi.mocked(authenticateContestantApiKey).mockResolvedValue(null);
+    vi.mocked(recordContestantTokenUsage).mockResolvedValue();
     vi.mocked(reserveContestantApiRequest).mockResolvedValue({ allowed: true, remaining: 9 });
     vi.mocked(releaseContestantApiRequest).mockResolvedValue();
   });
@@ -127,7 +91,7 @@ describe.sequential("chat completion proxy", () => {
     vi.stubGlobal("fetch", fetchMock);
     await setGatewayServiceEnabled(false);
 
-    const response = await proxyChatCompletions(request("deepseek", "wrong"));
+    const response = await proxyChatCompletions(request("deepseek-v4-pro", "wrong"));
     const payload = (await response.json()) as { error: { code: string } };
 
     expect(response.status).toBe(503);
@@ -140,7 +104,26 @@ describe.sequential("chat completion proxy", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
-    const response = await proxyChatCompletions(request("deepseek", "wrong"));
+    const response = await proxyChatCompletions(request("deepseek-v4-pro", "wrong"));
+    const payload = (await response.json()) as { error: { code: string } };
+
+    expect(response.status).toBe(401);
+    expect(payload.error.code).toBe("invalid_api_key");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts only Bearer authentication on the OpenAI-compatible API", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const original = request();
+    const response = await proxyChatCompletions(new Request(original.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": "client-secret",
+      },
+      body: await original.text(),
+    }));
     const payload = (await response.json()) as { error: { code: string } };
 
     expect(response.status).toBe(401);
@@ -158,15 +141,24 @@ describe.sequential("chat completion proxy", () => {
     expect(payload.error.code).toBe("model_not_allowed");
   });
 
-  it("does not accept an upstream model id as a public model", async () => {
+  it.each([
+    "deepseek",
+    "qwen",
+    "deepseek-flash",
+    "deepseek-pro",
+    "qwen-flash",
+    "qwen-pro",
+    "qwen-max",
+    "QWEN3.7-PLUS",
+  ])("rejects removed or inexact model name %s", async (model) => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
-    const response = await proxyChatCompletions(
-      request("deepseek-v4-pro"),
-    );
+    const response = await proxyChatCompletions(request(model));
+    const payload = (await response.json()) as { error: { code: string } };
 
     expect(response.status).toBe(400);
+    expect(payload.error.code).toBe("model_not_allowed");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -180,7 +172,7 @@ describe.sequential("chat completion proxy", () => {
         headers: { Authorization: "Bearer client-secret" },
         body: new ReadableStream({
           start(controller) {
-            controller.enqueue(new TextEncoder().encode('{"model":"deepseek","messages":[]}'));
+            controller.enqueue(new TextEncoder().encode('{"model":"deepseek-v4-pro","messages":[]}'));
             controller.close();
           },
         }),
@@ -196,7 +188,7 @@ describe.sequential("chat completion proxy", () => {
     delete process.env.MODELMUX_MAX_BODY_BYTES;
   });
 
-  it("maps the legacy deepseek alias to Pro without inventing parameters", async () => {
+  it("forwards the exact DeepSeek platform model ID without inventing parameters", async () => {
     const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       expect(body.model).toBe("deepseek-v4-pro");
@@ -212,7 +204,7 @@ describe.sequential("chat completion proxy", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const response = await proxyChatCompletions(request("deepseek", "client-secret", true));
+    const response = await proxyChatCompletions(request("deepseek-v4-pro", "client-secret", true));
 
     expect(response.status).toBe(200);
     expect(response.headers.get("X-Accel-Buffering")).toBe("no");
@@ -237,7 +229,7 @@ describe.sequential("chat completion proxy", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const original = request("qwen-flash");
+    const original = request("qwen3.7-flash");
     const payload = await original.json() as Record<string, unknown>;
     payload.enable_thinking = true;
     payload.thinking_budget = 8192;
@@ -252,6 +244,48 @@ describe.sequential("chat completion proxy", () => {
     expect(response.status).toBe(200);
   });
 
+  it("routes exact Kimi K3 and GLM-5.3 IDs through DashScope", async () => {
+    const requestedModels = ["kimi/kimi-k3", "ZHIPU/GLM-5.3"];
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      expect(url).toBe(
+        "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+      );
+      expect(requestedModels).toContain(body.model);
+      return Response.json({ id: "domestic-model-response" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    for (const model of requestedModels) {
+      const response = await proxyChatCompletions(request(model));
+      expect(response.status).toBe(200);
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses the Ark v3 chat completions path for the exact Doubao model", async () => {
+    process.env.ARK_API_KEYS = "ark-secret";
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      expect(url).toBe(
+        "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+      );
+      expect(body.model).toBe("doubao-seed-2-0-pro-260215");
+      expect(new Headers(init.headers).get("Authorization")).toBe(
+        "Bearer ark-secret",
+      );
+      return Response.json({ id: "doubao-response" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await proxyChatCompletions(
+      request("doubao-seed-2-0-pro-260215"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it("preserves official DeepSeek V4 thinking parameters", async () => {
     const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
@@ -262,7 +296,7 @@ describe.sequential("chat completion proxy", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const original = request("deepseek-pro");
+    const original = request("deepseek-v4-pro");
     const payload = await original.json() as Record<string, unknown>;
     payload.thinking = { type: "enabled" };
     payload.reasoning_effort = "max";
@@ -280,7 +314,7 @@ describe.sequential("chat completion proxy", () => {
   it("rejects unofficial parameters before contacting an upstream", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    const original = request("deepseek-pro");
+    const original = request("deepseek-v4-pro");
     const payload = await original.json() as Record<string, unknown>;
     payload.enable_thinking = true;
 
@@ -308,7 +342,7 @@ describe.sequential("chat completion proxy", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const response = await proxyChatCompletions(request("deepseek-pro"));
+    const response = await proxyChatCompletions(request("deepseek-v4-pro"));
 
     expect(response.status).toBe(200);
   });
@@ -317,7 +351,7 @@ describe.sequential("chat completion proxy", () => {
     process.env.PRIMARY_KEYS = "primary-key";
     process.env.BACKUP_KEYS = "backup-key";
     process.env.MODELMUX_ROUTES_JSON = JSON.stringify({
-      deepseek: [
+      "primary-model": [
         {
           provider: "primary",
           baseUrl: "https://primary.example.com",
@@ -345,7 +379,7 @@ describe.sequential("chat completion proxy", () => {
       });
     vi.stubGlobal("fetch", fetchMock);
 
-    const response = await proxyChatCompletions(request());
+    const response = await proxyChatCompletions(request("primary-model"));
 
     expect(response.status).toBe(200);
     expect(response.headers.get("X-ModelMux-Provider")).toBe("backup");
@@ -380,14 +414,23 @@ describe.sequential("chat completion proxy", () => {
       requestsUsed: 0,
     });
     vi.mocked(reserveContestantApiRequest).mockResolvedValue({ allowed: true, remaining: 9 });
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ id: "completion-42" })));
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      id: "completion-42",
+      usage: { prompt_tokens: 14, completion_tokens: 6, total_tokens: 20 },
+    })));
 
-    const response = await proxyChatCompletions(request("deepseek", "sk-competition-test"));
+    const response = await proxyChatCompletions(request("deepseek-v4-pro", "sk-competition-test"));
+    await response.text();
 
     expect(response.status).toBe(200);
     expect(response.headers.get("X-Quota-Remaining")).toBe("9");
     expect(reserveContestantApiRequest).toHaveBeenCalledWith(42, true);
     expect(releaseContestantApiRequest).not.toHaveBeenCalled();
+    expect(recordContestantTokenUsage).toHaveBeenCalledWith(42, {
+      inputTokens: 14,
+      outputTokens: 6,
+      totalTokens: 20,
+    });
   });
 
   it("rejects exhausted contestant quota before contacting a provider", async () => {
@@ -404,242 +447,12 @@ describe.sequential("chat completion proxy", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
-    const response = await proxyChatCompletions(request("deepseek", "sk-competition-test"));
+    const response = await proxyChatCompletions(request("deepseek-v4-pro", "sk-competition-test"));
     const payload = (await response.json()) as { error: { code: string } };
 
     expect(response.status).toBe(429);
     expect(response.headers.get("X-Quota-Remaining")).toBe("0");
     expect(payload.error.code).toBe("quota_exceeded");
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("serves Anthropic Messages through the same contestant quota", async () => {
-    process.env.MODELMUX_DATABASE_URL = "mysql://configured-for-test";
-    vi.mocked(authenticateContestantApiKey).mockResolvedValue({
-      id: 42,
-      username: "contestant-42",
-      displayName: "选手 42",
-      apiKey: "sk-competition-test",
-      requestQuota: 10,
-      requestsUsed: 0,
-    });
-    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
-      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-      const headers = new Headers(init.headers);
-      expect(url).toBe("https://api.deepseek.com/v1/chat/completions");
-      expect(body).toMatchObject({
-        model: "deepseek-v4-pro",
-        messages: [
-          { role: "system", content: "Answer briefly." },
-          { role: "user", content: "hello" },
-        ],
-        max_tokens: 128,
-        stream: false,
-      });
-      expect(headers.get("Authorization")).toBe("Bearer deepseek-secret");
-      expect(headers.get("x-api-key")).toBeNull();
-      expect(headers.get("anthropic-version")).toBeNull();
-      return Response.json({
-        choices: [{
-          message: { role: "assistant", content: "你好" },
-          finish_reason: "stop",
-        }],
-        usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 },
-      });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const response = await proxyAnthropicMessages(
-      anthropicRequest("text", {
-        key: "sk-competition-test",
-        model: "deepseek-pro",
-      }),
-    );
-    const payload = await response.json() as {
-      type: string;
-      model: string;
-      content: Array<{ type: string; text: string }>;
-      usage: { input_tokens: number; output_tokens: number };
-    };
-
-    expect(response.status).toBe(200);
-    expect(response.headers.get("X-Quota-Remaining")).toBe("9");
-    expect(payload).toMatchObject({
-      type: "message",
-      model: "deepseek-pro",
-      content: [{ type: "text", text: "你好" }],
-      usage: { input_tokens: 4, output_tokens: 2 },
-    });
-    expect(reserveContestantApiRequest).toHaveBeenCalledWith(42, true);
-  });
-
-  it("maps Anthropic image blocks to OpenAI-compatible Qwen parts", async () => {
-    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
-      const body = JSON.parse(String(init.body)) as {
-        messages: Array<{ content: Array<Record<string, unknown>> }>;
-      };
-      expect(body.messages[1].content).toEqual([
-        {
-          type: "image_url",
-          image_url: { url: "data:image/png;base64,aGVsbG8=" },
-        },
-        { type: "text", text: "describe this image" },
-      ]);
-      return Response.json({
-        choices: [{
-          message: { role: "assistant", content: "一张示例图片" },
-          finish_reason: "stop",
-        }],
-      });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const response = await proxyAnthropicMessages(anthropicRequest("image"));
-    const payload = await response.json() as {
-      content: Array<{ type: string; text: string }>;
-    };
-
-    expect(response.status).toBe(200);
-    expect(payload.content).toEqual([
-      { type: "text", text: "一张示例图片" },
-    ]);
-  });
-
-  it("maps Anthropic tools and OpenAI tool calls in both directions", async () => {
-    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
-      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-      expect(body.tools).toEqual([{
-        type: "function",
-        function: {
-          name: "lookup",
-          description: "Lookup a value",
-          parameters: {
-            type: "object",
-            properties: { query: { type: "string" } },
-            required: ["query"],
-          },
-        },
-      }]);
-      return Response.json({
-        choices: [{
-          message: {
-            role: "assistant",
-            content: "",
-            tool_calls: [{
-              id: "call_1",
-              type: "function",
-              function: {
-                name: "lookup",
-                arguments: "{\"query\":\"air\"}",
-              },
-            }],
-          },
-          finish_reason: "tool_calls",
-        }],
-      });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    const original = anthropicRequest("text");
-    const body = await original.json() as Record<string, unknown>;
-    body.tools = [{
-      name: "lookup",
-      description: "Lookup a value",
-      input_schema: {
-        type: "object",
-        properties: { query: { type: "string" } },
-        required: ["query"],
-      },
-    }];
-
-    const response = await proxyAnthropicMessages(new Request(original.url, {
-      method: "POST",
-      headers: original.headers,
-      body: JSON.stringify(body),
-    }));
-    const payload = await response.json() as {
-      content: Array<Record<string, unknown>>;
-      stop_reason: string;
-    };
-
-    expect(payload.content).toEqual([{
-      type: "tool_use",
-      id: "call_1",
-      name: "lookup",
-      input: { query: "air" },
-    }]);
-    expect(payload.stop_reason).toBe("tool_use");
-  });
-
-  it("converts OpenAI SSE into Anthropic Messages events", async () => {
-    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
-      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-      expect(body.stream).toBe(true);
-      expect(body.stream_options).toEqual({ include_usage: true });
-      return new Response([
-        "data: {\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"你\"},\"finish_reason\":null}]}",
-        "",
-        "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"好\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":2,\"total_tokens\":6}}",
-        "",
-        "data: [DONE]",
-        "",
-      ].join("\n"), {
-        headers: { "Content-Type": "text/event-stream" },
-      });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const response = await proxyAnthropicMessages(
-      anthropicRequest("text", { stream: true }),
-    );
-    const events = (await response.text())
-      .split("\n\n")
-      .filter(Boolean)
-      .map((block) => ({
-        name: block.split("\n")[0].slice("event: ".length),
-        data: JSON.parse(
-          block.split("\n").find((line) => line.startsWith("data: "))!
-            .slice("data: ".length),
-        ) as Record<string, unknown>,
-      }));
-
-    expect(response.headers.get("Content-Type")).toContain("text/event-stream");
-    expect(events.map((item) => item.name)).toEqual([
-      "message_start",
-      "content_block_start",
-      "content_block_delta",
-      "content_block_delta",
-      "content_block_stop",
-      "message_delta",
-      "message_stop",
-    ]);
-    expect(events[2].data).toMatchObject({
-      delta: { type: "text_delta", text: "你" },
-    });
-    expect(events[3].data).toMatchObject({
-      delta: { type: "text_delta", text: "好" },
-    });
-    expect(events[5].data).toMatchObject({
-      delta: { stop_reason: "end_turn" },
-      usage: { input_tokens: 4, output_tokens: 2 },
-    });
-  });
-
-  it("returns an Anthropic error when anthropic-version is missing", async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-
-    const response = await proxyAnthropicMessages(
-      anthropicRequest("text", { includeVersion: false }),
-    );
-    const payload = await response.json() as {
-      type: string;
-      error: { type: string; message: string };
-    };
-
-    expect(response.status).toBe(400);
-    expect(payload.type).toBe("error");
-    expect(payload.error.type).toBe("invalid_request_error");
-    expect(payload.error.message).toContain("anthropic-version");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -660,7 +473,7 @@ describe.sequential("chat completion proxy", () => {
     });
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ id: "completion-42" })));
 
-    const response = await proxyChatCompletions(request("deepseek", "sk-competition-test"));
+    const response = await proxyChatCompletions(request("deepseek-v4-pro", "sk-competition-test"));
 
     expect(response.status).toBe(200);
     expect(reserveContestantApiRequest).toHaveBeenCalledWith(42, false);
@@ -685,7 +498,7 @@ describe.sequential("chat completion proxy", () => {
     });
     vi.stubGlobal("fetch", vi.fn(async () => new Response("invalid", { status: 400 })));
 
-    const response = await proxyChatCompletions(request("deepseek", "sk-competition-test"));
+    const response = await proxyChatCompletions(request("deepseek-v4-pro", "sk-competition-test"));
 
     expect(response.status).toBe(400);
     expect(releaseContestantApiRequest).toHaveBeenCalledWith(42);
@@ -705,7 +518,7 @@ describe.sequential("chat completion proxy", () => {
     vi.mocked(reserveContestantApiRequest).mockResolvedValue({ allowed: true, remaining: 9 });
     vi.stubGlobal("fetch", vi.fn(async () => new Response("invalid", { status: 400 })));
 
-    const response = await proxyChatCompletions(request("deepseek", "sk-competition-test"));
+    const response = await proxyChatCompletions(request("deepseek-v4-pro", "sk-competition-test"));
 
     expect(response.status).toBe(400);
     expect(response.headers.get("X-Quota-Remaining")).toBe("10");

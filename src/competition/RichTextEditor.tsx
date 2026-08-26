@@ -7,12 +7,14 @@ import StarterKit from "@tiptap/starter-kit";
 import {
   Bold,
   Code2,
+  FileUp,
   Heading2,
   ImagePlus,
   Italic,
   Link2,
   List,
   ListOrdered,
+  LoaderCircle,
   Quote,
   Redo2,
   Strikethrough,
@@ -21,11 +23,41 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { inlineImageData, isStoredImagePath, uploadableImageTypes } from "@/lib/competition/images";
-import { apiRequest } from "./api";
+import { AttachmentNode, formatAttachmentSize } from "./AttachmentNode";
 
-function imageFilesOf(transfer: DataTransfer | null): File[] {
-  if (!transfer) return [];
-  return Array.from(transfer.files).filter((file) => uploadableImageTypes.has(file.type));
+type MediaKind = "image" | "file";
+
+const RichTextLink = Link.extend({
+  parseHTML() {
+    return [{
+      tag: "a[href]:not(.rich-attachment)",
+      getAttrs: (element) => {
+        const href = (element as HTMLElement).getAttribute("href") ?? "";
+        return /^(https?:|mailto:|\/|#)/i.test(href) ? null : false;
+      },
+    }];
+  },
+});
+
+interface StoredMedia {
+  id: number;
+  url: string;
+  kind: MediaKind;
+  originalName: string;
+  mimeType: string;
+  byteSize: number;
+}
+
+interface UploadStatus {
+  fileName: string;
+  fileIndex: number;
+  fileCount: number;
+  loaded: number;
+  total: number;
+}
+
+function transferFiles(transfer: DataTransfer | null): File[] {
+  return transfer ? Array.from(transfer.files) : [];
 }
 
 function fileFromDataUrl(src: string): File | null {
@@ -67,17 +99,20 @@ export function RichTextEditor({
   editable?: boolean;
   minHeight?: number;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<Editor | null>(null);
-  const [uploading, setUploading] = useState(false);
+  const uploadActiveRef = useRef(false);
+  const [uploadStatus, setUploadStatus] = useState<UploadStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
       StarterKit.configure({ link: false }),
-      Link.configure({ openOnClick: false, autolink: true, protocols: ["http", "https"] }),
+      RichTextLink.configure({ openOnClick: false, autolink: true, protocols: ["http", "https"] }),
       Image.configure({ allowBase64: false, inline: false }),
+      AttachmentNode,
     ],
     content: value,
     editable,
@@ -91,10 +126,10 @@ export function RichTextEditor({
         const active = editorRef.current;
         if (!active?.isEditable) return false;
         const clipboard = event.clipboardData;
-        const files = imageFilesOf(clipboard);
+        const files = transferFiles(clipboard);
         if (files.length > 0) {
           event.preventDefault();
-          void uploadImages(files);
+          void uploadFiles(files, "auto");
           return true;
         }
         const parsed = pastedImageDocument(clipboard?.getData("text/html") ?? "");
@@ -106,12 +141,12 @@ export function RichTextEditor({
       handleDrop: (view, event, _slice, moved) => {
         const active = editorRef.current;
         if (moved || !active?.isEditable) return false;
-        const files = imageFilesOf(event.dataTransfer);
+        const files = transferFiles(event.dataTransfer);
         if (files.length === 0) return false;
         event.preventDefault();
         const dropped = view.posAtCoords({ left: event.clientX, top: event.clientY });
         if (dropped) active.commands.setTextSelection(dropped.pos);
-        void uploadImages(files);
+        void uploadFiles(files, "auto");
         return true;
       },
     },
@@ -144,38 +179,108 @@ export function RichTextEditor({
     else editor.chain().focus().extendMarkRange("link").setLink({ href: href.trim() }).run();
   }
 
-  async function storeImage(file: File): Promise<string> {
+  function storeMedia(
+    file: File,
+    kind: MediaKind,
+    fileIndex: number,
+    fileCount: number,
+  ): Promise<StoredMedia> {
     const form = new FormData();
     form.set("purpose", purpose);
+    form.set("kind", kind);
     form.set("file", file);
-    const result = await apiRequest<{ url: string }>("/api/competition/media", { method: "POST", body: form });
-    return result.url;
+    setUploadStatus({ fileName: file.name, fileIndex, fileCount, loaded: 0, total: file.size });
+
+    return new Promise((resolve, reject) => {
+      const request = new XMLHttpRequest();
+      request.open("POST", "/api/competition/media");
+      request.upload.onprogress = (event) => {
+        setUploadStatus({
+          fileName: file.name,
+          fileIndex,
+          fileCount,
+          loaded: event.loaded,
+          total: event.lengthComputable ? event.total : file.size,
+        });
+      };
+      request.onerror = () => reject(new Error("附件上传失败，请检查网络连接"));
+      request.onload = () => {
+        let payload: (Partial<StoredMedia> & { error?: string }) | null = null;
+        try {
+          payload = JSON.parse(request.responseText) as Partial<StoredMedia> & { error?: string };
+        } catch {
+          // 非 JSON 响应会使用下面的 HTTP 状态提示。
+        }
+        if (request.status === 401) {
+          const next = `${window.location.pathname}${window.location.search}`;
+          window.location.replace(`/login?next=${encodeURIComponent(next)}`);
+        }
+        if (request.status < 200 || request.status >= 300) {
+          reject(new Error(payload?.error || `附件上传失败（HTTP ${request.status}）`));
+          return;
+        }
+        if (!payload || typeof payload.id !== "number" || typeof payload.url !== "string") {
+          reject(new Error("服务器返回的附件信息无效"));
+          return;
+        }
+        resolve(payload as StoredMedia);
+      };
+      request.send(form);
+    });
   }
 
-  async function uploadImages(files: File[]) {
-    setUploading(true);
+  async function uploadFiles(files: File[], insertion: MediaKind | "auto") {
+    if (uploadActiveRef.current) {
+      setNotice("当前附件仍在上传，请等待完成后再继续");
+      return;
+    }
+    uploadActiveRef.current = true;
     setError(null);
     setNotice(null);
     try {
-      for (const file of files) {
-        const url = await storeImage(file);
-        editorRef.current?.chain().focus().setImage({ src: url, alt: file.name }).run();
+      for (const [index, file] of files.entries()) {
+        const kind = insertion === "auto"
+          ? uploadableImageTypes.has(file.type) ? "image" : "file"
+          : insertion;
+        const stored = await storeMedia(file, kind, index + 1, files.length);
+        const active = editorRef.current;
+        if (!active) continue;
+        if (kind === "image") {
+          active.chain().focus().setImage({ src: stored.url, alt: stored.originalName }).run();
+        } else {
+          active.chain().focus().insertContent({
+            type: "attachment",
+            attrs: {
+              mediaId: String(stored.id),
+              name: stored.originalName,
+              byteSize: String(stored.byteSize),
+              mimeType: stored.mimeType,
+            },
+          }).run();
+        }
       }
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "图片上传失败");
+      setError(uploadError instanceof Error ? uploadError.message : "附件上传失败");
     } finally {
-      setUploading(false);
-      if (inputRef.current) inputRef.current.value = "";
+      uploadActiveRef.current = false;
+      setUploadStatus(null);
+      if (imageInputRef.current) imageInputRef.current.value = "";
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
 
   async function insertPastedContent(parsed: Document) {
-    setUploading(true);
+    if (uploadActiveRef.current) {
+      setNotice("当前附件仍在上传，请等待完成后再粘贴");
+      return;
+    }
+    uploadActiveRef.current = true;
     setError(null);
     setNotice(null);
     let removed = 0;
     try {
-      for (const image of Array.from(parsed.querySelectorAll("img"))) {
+      const images = Array.from(parsed.querySelectorAll("img"));
+      for (const [index, image] of images.entries()) {
         const src = image.getAttribute("src") ?? "";
         if (isStoredImagePath(src)) continue;
         const inlined = fileFromDataUrl(src);
@@ -184,7 +289,8 @@ export function RichTextEditor({
           removed += 1;
           continue;
         }
-        image.setAttribute("src", await storeImage(inlined));
+        const stored = await storeMedia(inlined, "image", index + 1, images.length);
+        image.setAttribute("src", stored.url);
       }
       editorRef.current?.chain().focus().insertContent(parsed.body.innerHTML).run();
       if (removed > 0) {
@@ -193,9 +299,15 @@ export function RichTextEditor({
     } catch (pasteError) {
       setError(pasteError instanceof Error ? pasteError.message : "图片上传失败");
     } finally {
-      setUploading(false);
+      uploadActiveRef.current = false;
+      setUploadStatus(null);
     }
   }
+
+  const uploading = uploadStatus !== null;
+  const uploadPercent = uploadStatus && uploadStatus.total > 0
+    ? Math.min(100, Math.round((uploadStatus.loaded / uploadStatus.total) * 100))
+    : null;
 
   return (
     <div className={`rich-editor ${editable ? "editable" : "readonly"}`}>
@@ -214,17 +326,39 @@ export function RichTextEditor({
           <EditorButton label="引用" onClick={() => editor.chain().focus().toggleBlockquote().run()} active={editor.isActive("blockquote")}><Quote /></EditorButton>
           <EditorButton label="代码块" onClick={() => editor.chain().focus().toggleCodeBlock().run()} active={editor.isActive("codeBlock")}><Code2 /></EditorButton>
           <EditorButton label="链接" onClick={setLink} active={editor.isActive("link")}><Link2 /></EditorButton>
-          <EditorButton label={uploading ? "正在上传图片" : "插入图片"} onClick={() => inputRef.current?.click()} disabled={uploading}><ImagePlus /></EditorButton>
+          <EditorButton label={uploading ? "正在上传" : "插入图片"} onClick={() => imageInputRef.current?.click()} disabled={uploading}><ImagePlus /></EditorButton>
+          <EditorButton label={uploading ? "正在上传" : "插入附件"} onClick={() => fileInputRef.current?.click()} disabled={uploading}><FileUp /></EditorButton>
           <input
-            ref={inputRef}
+            ref={imageInputRef}
             className="visually-hidden"
             type="file"
             accept="image/jpeg,image/png,image/gif,image/webp"
+            multiple
             onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void uploadImages([file]);
+              const files = Array.from(event.target.files ?? []);
+              if (files.length > 0) void uploadFiles(files, "image");
             }}
           />
+          <input
+            ref={fileInputRef}
+            className="visually-hidden"
+            type="file"
+            multiple
+            onChange={(event) => {
+              const files = Array.from(event.target.files ?? []);
+              if (files.length > 0) void uploadFiles(files, "file");
+            }}
+          />
+        </div>
+      )}
+      {uploadStatus && (
+        <div className="editor-upload-status" role="status">
+          <LoaderCircle className="spinning" />
+          <div>
+            <strong>正在上传 {uploadStatus.fileIndex}/{uploadStatus.fileCount}：{uploadStatus.fileName}</strong>
+            <progress value={uploadStatus.loaded} max={Math.max(uploadStatus.total, 1)} />
+          </div>
+          <span>{uploadPercent === null ? formatAttachmentSize(uploadStatus.loaded) : `${uploadPercent}%`}</span>
         </div>
       )}
       {error && <div className="editor-error" role="alert">{error}</div>}

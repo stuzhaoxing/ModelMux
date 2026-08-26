@@ -146,7 +146,7 @@ export default function AdminAccounts() {
       setError("该账号没有可复制的密码，请重新生成账号");
       return;
     }
-    const loginUrl = `${window.location.origin}${user.role === "judge" ? "/judge/questions" : "/contestant/questions"}`;
+    const loginUrl = `${window.location.origin}${user.role === "judge" ? "/judge/dashboard" : "/contestant/questions"}`;
     const content = [
       `登录地址：${loginUrl}`,
       `账号：${user.username}`,
@@ -228,7 +228,7 @@ export default function AdminAccounts() {
           {generatedCredentials.apiKey && <code>{generatedCredentials.apiKey} · {generatedCredentials.requestQuota} 次</code>}
           <button type="button" className="secondary-action" onClick={() => void copyAccount(generatedCredentials)}><Copy />复制登录信息</button>
         </div>}
-        <div className="portal-links"><a href="/judge/questions" target="_blank">评委登录入口</a><a href="/contestant/questions" target="_blank">选手登录入口</a></div>
+        <div className="portal-links"><a href="/judge/dashboard" target="_blank">评委登录入口</a><a href="/contestant/questions" target="_blank">选手登录入口</a></div>
       </section>
 
       <section className="workspace-panel account-list-panel">

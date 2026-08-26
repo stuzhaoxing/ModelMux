@@ -4,23 +4,27 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { discardImageUpload, receiveImageUpload } from "./media";
+import { discardMediaUpload, mediaContentDisposition, receiveMediaUpload } from "./media";
 
-function uploadRequest(bytes: Uint8Array, type = "image/png"): Request {
+function uploadRequest(
+  bytes: Uint8Array,
+  { type = "image/png", kind = "image", name = "answer.png" } = {},
+): Request {
   const form = new FormData();
   form.set("purpose", "answer");
+  form.set("kind", kind);
   const body = bytes.buffer.slice(
     bytes.byteOffset,
     bytes.byteOffset + bytes.byteLength,
   ) as ArrayBuffer;
-  form.set("file", new File([body], "answer.png", { type }));
+  form.set("file", new File([body], name, { type }));
   return new Request("http://localhost/api/competition/media", {
     method: "POST",
     body: form,
   });
 }
 
-describe("disk-backed image uploads", () => {
+describe("disk-backed media uploads", () => {
   let dataDirectory: string;
 
   beforeEach(async () => {
@@ -37,24 +41,61 @@ describe("disk-backed image uploads", () => {
     const bytes = new Uint8Array(9 * 1024 * 1024);
     bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-    const upload = await receiveImageUpload(uploadRequest(bytes));
+    const upload = await receiveMediaUpload(uploadRequest(bytes));
     const stored = await stat(path.join(dataDirectory, "uploads", upload.storageName));
 
     expect(upload).toMatchObject({
       purpose: "answer",
+      kind: "image",
       originalName: "answer.png",
       mimeType: "image/png",
       byteSize: bytes.byteLength,
     });
     expect(stored.size).toBe(bytes.byteLength);
 
-    await discardImageUpload(upload);
+    await discardMediaUpload(upload);
   });
 
   it("removes the disk file when the declared image signature is invalid", async () => {
-    await expect(receiveImageUpload(uploadRequest(new Uint8Array([1, 2, 3]))))
+    await expect(receiveMediaUpload(uploadRequest(new Uint8Array([1, 2, 3]))))
       .rejects.toThrow("invalid_image");
 
     expect(await readdir(path.join(dataDirectory, "uploads"))).toEqual([]);
+  });
+
+  it("accepts arbitrary large attachments without an application size cap", async () => {
+    const bytes = new Uint8Array(12 * 1024 * 1024);
+    bytes.set([0x25, 0x50, 0x44, 0x46, 0x2d]);
+
+    const upload = await receiveMediaUpload(uploadRequest(bytes, {
+      type: "application/pdf",
+      kind: "file",
+      name: "现场材料.pdf",
+    }));
+    const stored = await stat(path.join(dataDirectory, "uploads", upload.storageName));
+
+    expect(upload).toMatchObject({
+      purpose: "answer",
+      kind: "file",
+      originalName: "现场材料.pdf",
+      mimeType: "application/pdf",
+      byteSize: bytes.byteLength,
+    });
+    expect(stored.size).toBe(bytes.byteLength);
+    expect(mediaContentDisposition(upload.kind, upload.originalName)).toContain("attachment;");
+
+    await discardMediaUpload(upload);
+  });
+
+  it("allows an empty ordinary file and forces it to download", async () => {
+    const upload = await receiveMediaUpload(uploadRequest(new Uint8Array(), {
+      type: "text/plain",
+      kind: "file",
+      name: "空白模板.txt",
+    }));
+
+    expect(upload.byteSize).toBe(0);
+    expect(mediaContentDisposition(upload.kind, upload.originalName)).toMatch(/^attachment;/);
+    await discardMediaUpload(upload);
   });
 });

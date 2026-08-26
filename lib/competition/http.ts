@@ -49,6 +49,13 @@ export function competitionError(error: unknown): NextResponse {
   if (code === "question_not_found") return NextResponse.json({ error: "题目不存在" }, { status: 404 });
   if (code === "question_not_open") return NextResponse.json({ error: "题目已经关闭，不能继续作答" }, { status: 409 });
   if (code === "answer_locked") return NextResponse.json({ error: "答案已最终提交，不能再修改" }, { status: 409 });
+  if (code === "question_set_empty") return NextResponse.json({ error: "请先保存至少一道题目" }, { status: 409 });
+  if (code === "question_set_published") return NextResponse.json({ error: "题目已经统一发布，不能再次发布或新增" }, { status: 409 });
+  if (code === "question_set_conflict") return NextResponse.json({ error: "题目集刚刚发生变化，请刷新后重试" }, { status: 409 });
+  if (code === "competition_running") return NextResponse.json({ error: "比赛进行中不能删除题目，请先停止比赛" }, { status: 409 });
+  if (code === "competition_not_running") return NextResponse.json({ error: "比赛当前不在进行中" }, { status: 409 });
+  if (code === "competition_control_missing") return NextResponse.json({ error: "比赛状态尚未初始化" }, { status: 503 });
+  if (code === "export_font_missing") return NextResponse.json({ error: "服务器尚未配置中文 PDF 导出字体" }, { status: 503 });
   if (databaseUnavailable) {
     return NextResponse.json({ error: "考核数据库尚未配置或无法连接" }, { status: 503 });
   }

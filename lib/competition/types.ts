@@ -1,8 +1,21 @@
 import type { OperationMode } from "@/lib/gateway/operation-mode";
+import type {
+  ModelFamily,
+  ModelInputModality,
+} from "@/lib/gateway/types";
 
 export type CompetitionRole = "judge" | "contestant";
 export type QuestionStatus = "draft" | "published" | "closed";
 export type AnswerStatus = "not_started" | "draft" | "submitted";
+export type CompetitionControlState = "not_started" | "running" | "ended";
+
+export interface CompetitionControl {
+  state: CompetitionControlState;
+  durationMinutes: number;
+  startedAt: string | null;
+  endsAt: string | null;
+  stoppedAt: string | null;
+}
 
 export interface CompetitionUser {
   id: number;
@@ -20,7 +33,6 @@ export interface CompetitionUser {
 
 export interface ContestantApiAccess {
   apiBase: string;
-  anthropicApiBase: string;
   apiKey: string;
   requestQuota: number;
   requestsUsed: number;
@@ -34,8 +46,9 @@ export interface ContestantApiAccess {
     id: string;
     name: string;
     description: string;
-    compatibilityAliases: string[];
-    inputModalities: Array<"text" | "image" | "video">;
+    family: ModelFamily;
+    inputModalities: ModelInputModality[];
+    contextWindowTokens: number | null;
   }>;
 }
 
@@ -97,8 +110,11 @@ export type ActivityAction =
   | "answer-submitted"
   | "question-created"
   | "question-updated"
+  | "question-deleted"
   | "question-published"
   | "question-closed"
+  | "competition-started"
+  | "competition-stopped"
   | "model-call"
   | "model-rejected";
 

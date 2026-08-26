@@ -18,7 +18,51 @@ describe.sequential("public models endpoint", () => {
 
   afterEach(async () => {
     delete process.env.MODELMUX_DATA_DIR;
+    delete process.env.MODELMUX_ALLOW_ANONYMOUS;
+    delete process.env.DASHSCOPE_API_KEYS;
+    delete process.env.ARK_API_KEYS;
     await rm(dataDirectory, { force: true, recursive: true });
+  });
+
+  it("returns only exact primary-platform model IDs", async () => {
+    process.env.MODELMUX_ALLOW_ANONYMOUS = "true";
+
+    const response = await GET(new Request("http://localhost:4000/v1/models"));
+    const payload = (await response.json()) as {
+      data: Array<{ id: string }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.data.map((model) => model.id)).toEqual([
+      "deepseek-v4-flash",
+      "deepseek-v4-pro",
+      "qwen3.7-flash",
+      "qwen3.7-plus",
+      "qwen3.7-max",
+    ]);
+  });
+
+  it("advertises configured domestic flagship models with exact IDs", async () => {
+    process.env.MODELMUX_ALLOW_ANONYMOUS = "true";
+    process.env.DASHSCOPE_API_KEYS = "dashscope-key";
+
+    const response = await GET(new Request("http://localhost:4000/v1/models"));
+    const payload = (await response.json()) as {
+      data: Array<{ id: string }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.data.map((model) => model.id)).toEqual([
+      "deepseek-v4-flash",
+      "deepseek-v4-pro",
+      "qwen3.7-flash",
+      "qwen3.7-plus",
+      "qwen3.7-max",
+      "qwen3.8-max",
+      "ZHIPU/GLM-5.3",
+      "kimi/kimi-k3",
+      "MiniMax/MiniMax-M3",
+    ]);
   });
 
   it("returns the suspended error while model service is stopped", async () => {

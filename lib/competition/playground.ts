@@ -14,6 +14,16 @@ const playgroundRemoteImageUrlSchema = z
 
 export const playgroundRequestSchema = z.object({
   model: z.string().trim().min(1).max(80),
+  family: z.enum([
+    "deepseek",
+    "qwen",
+    "glm",
+    "kimi",
+    "minimax",
+    "doubao",
+    "custom",
+  ]),
+  supportsImage: z.boolean().default(false),
   systemPrompt: z.string().trim().max(2_000).default(""),
   prompt: z.string().trim().min(1).max(8_000),
   imageUrl: z
@@ -51,8 +61,8 @@ export function buildPlaygroundApiCall(
 export function buildPlaygroundPayload(
   input: PlaygroundRequest,
 ): Record<string, unknown> {
-  if (input.imageUrl && !input.model.startsWith("qwen-")) {
-    throw new Error("playground_image_requires_qwen");
+  if (input.imageUrl && !input.supportsImage) {
+    throw new Error("playground_image_not_supported");
   }
 
   const userContent: string | Array<Record<string, unknown>> = input.imageUrl
@@ -71,12 +81,14 @@ export function buildPlaygroundPayload(
     model: input.model,
     messages,
     stream: false,
-    temperature: input.temperature,
     max_tokens: input.maxTokens,
   };
-  if (input.model.startsWith("qwen-")) {
+  if (!["glm", "kimi", "minimax", "doubao"].includes(input.family)) {
+    payload.temperature = input.temperature;
+  }
+  if (input.family === "qwen") {
     payload.enable_thinking = input.enableThinking;
-  } else if (input.model.startsWith("deepseek-")) {
+  } else if (input.family === "deepseek") {
     payload.thinking = { type: input.enableThinking ? "enabled" : "disabled" };
     if (input.enableThinking) payload.reasoning_effort = "high";
   }

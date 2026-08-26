@@ -6,8 +6,8 @@ import {
   BookOpen,
   Boxes,
   Braces,
-  Cable,
   Check,
+  CircleHelp,
   Copy,
   Gauge,
   Infinity as InfinityIcon,
@@ -26,18 +26,40 @@ import { apiRequest } from "./api";
 import {
   buildQuickStartExamples,
   type ApiExampleId,
-  type ApiProtocol,
 } from "./api-examples";
 import { ContestantPlayground } from "./ContestantPlayground";
 
-type CopyTarget = "url" | "key" | "quick" | "vision" | null;
+type CopyTarget =
+  | "url"
+  | "key"
+  | "quick"
+  | "vision"
+  | `model:${string}`
+  | null;
 
-const modalityLabels = { text: "文本", image: "图片", video: "视频" } as const;
+const modalityLabels = {
+  text: "文本",
+  image: "图片",
+  video: "视频",
+} as const;
 
 function modalityText(
   modalities: ContestantApiAccess["models"][number]["inputModalities"],
 ): string {
   return modalities.map((item) => modalityLabels[item]).join(" · ");
+}
+
+function modelCopyTarget(modelId: string): `model:${string}` {
+  return `model:${modelId}`;
+}
+
+function contextWindowText(
+  tokens: number | null,
+): string {
+  if (tokens === null) return "平台为准";
+  if (tokens >= 1_000_000) return "1M tokens";
+  if (tokens % 1_024 === 0) return `${tokens / 1_024}K tokens`;
+  return `${tokens.toLocaleString("zh-CN")} tokens`;
 }
 
 function CopyButton({
@@ -69,7 +91,6 @@ export function ContestantApiDocs() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<CopyTarget>(null);
-  const [protocol, setProtocol] = useState<ApiProtocol>("openai");
   const [exampleLanguage, setExampleLanguage] = useState<ApiExampleId>("curl");
   const [playgroundOpen, setPlaygroundOpen] = useState(false);
 
@@ -97,27 +118,24 @@ export function ContestantApiDocs() {
       .finally(() => setLoading(false));
   }, []);
 
-  const primaryModel = access?.models[0]?.id ?? "deepseek-flash";
+  const primaryModel = access?.models[0]?.id ?? "deepseek-v4-flash";
   const visionModels = useMemo(
     () => access?.models.filter((model) => model.inputModalities.includes("image")) ?? [],
     [access],
   );
   const visionModel = visionModels[0]?.id ?? primaryModel;
-  const currentApiBase = access
-    ? protocol === "openai" ? access.apiBase : access.anthropicApiBase
-    : "";
+  const currentApiBase = access?.apiBase ?? "";
   const quickStartExamples = useMemo(() => access
-    ? buildQuickStartExamples(protocol, {
+    ? buildQuickStartExamples({
         apiKey: access.apiKey,
         model: primaryModel,
         openAiBaseUrl: access.apiBase,
-        anthropicBaseUrl: access.anthropicApiBase,
       })
-    : [], [access, primaryModel, protocol]);
+    : [], [access, primaryModel]);
   const activeQuickExample = quickStartExamples.find(
     (example) => example.id === exampleLanguage,
   ) ?? quickStartExamples[0];
-  const visionExample = useMemo(() => access ? protocol === "openai" ? `curl ${access.apiBase}/chat/completions \\
+  const visionExample = useMemo(() => access ? `curl ${access.apiBase}/chat/completions \\
   -H "Authorization: Bearer ${access.apiKey}" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -129,27 +147,14 @@ export function ContestantApiDocs() {
         {"type": "text", "text": "请分析这张图片"}
       ]
     }]
-  }'` : `curl ${access.anthropicApiBase}/v1/messages \\
-  -H "x-api-key: ${access.apiKey}" \\
-  -H "anthropic-version: 2023-06-01" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "model": "${visionModel}",
-    "max_tokens": 1024,
-    "messages": [{
-      "role": "user",
-      "content": [
-        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "BASE64_IMAGE"}},
-        {"type": "text", "text": "请分析这张图片"}
-      ]
-    }]
-  }'` : "", [access, protocol, visionModel]);
-
+  }'` : "", [access, visionModel]);
   async function copyText(target: Exclude<CopyTarget, null>, value: string) {
     try {
       await navigator.clipboard.writeText(value);
       setCopied(target);
-      window.setTimeout(() => setCopied(null), 1800);
+      window.setTimeout(() => {
+        setCopied((current) => current === target ? null : current);
+      }, 1800);
     } catch {
       setError("复制失败，请手动选择并复制内容");
     }
@@ -188,7 +193,7 @@ export function ContestantApiDocs() {
         <div>
           <span><BookOpen />API REFERENCE</span>
           <h1>模型 API 技术文档</h1>
-          <p>同一把选手 API Key 可通过 OpenAI 兼容接口或 Anthropic Messages 兼容接口，调用竞赛模型白名单内的模型。</p>
+          <p>使用选手 API Key 通过 OpenAI 兼容接口调用竞赛模型白名单内的模型。</p>
         </div>
         <button type="button" className="secondary-action" disabled={loading} onClick={() => void loadAccess()}>
           <RefreshCw className={loading ? "spinning" : ""} />刷新额度
@@ -196,32 +201,6 @@ export function ContestantApiDocs() {
       </header>
 
       {error && <div className="workspace-message error" role="alert">{error}</div>}
-
-      <section className="api-protocol-switcher" aria-label="接口规范">
-        <div role="tablist" aria-label="选择接口规范">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={protocol === "openai"}
-            className={protocol === "openai" ? "active" : ""}
-            onClick={() => { setProtocol("openai"); setExampleLanguage("curl"); }}
-          >
-            <Braces />OpenAI 兼容
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={protocol === "anthropic"}
-            className={protocol === "anthropic" ? "active" : ""}
-            onClick={() => { setProtocol("anthropic"); setExampleLanguage("curl"); }}
-          >
-            <Cable />Anthropic 兼容
-          </button>
-        </div>
-        <p>{protocol === "openai"
-          ? "适合 OpenAI SDK 和 OpenAI 兼容客户端；可调用模型仅限下方白名单。"
-          : "适合 Anthropic SDK 和按 Messages API 开发的客户端；可调用模型仅限下方白名单。"}</p>
-      </section>
 
       <section className="api-access-band" aria-label="API 调用信息">
         <div className="api-credential-field">
@@ -244,14 +223,66 @@ export function ContestantApiDocs() {
             ? <div className="quota-track" aria-label={`已使用 ${access.requestsUsed} 次`}><i style={{ width: `${usedPercent}%` }} /></div>
             : <div className="quota-track unlimited" aria-label="比赛模式不限量"><i /></div>}
         </div>
+        <div className="api-access-models" aria-label={`可用模型，共 ${visibleModels.length} 个`}>
+          <div className="api-access-models-heading">
+            <span><Boxes />可用模型</span>
+            <a
+              className="api-model-help-link"
+              href="#model-access-help"
+              onClick={(event) => {
+                event.preventDefault();
+                document.getElementById("model-access-help")?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "start",
+                });
+              }}
+            >
+              想用的模型不在列表中？查看说明
+            </a>
+          </div>
+          <div className="api-model-specs-wrap">
+            <table className="api-model-specs">
+              <thead>
+                <tr>
+                  <th scope="col">模型 ID</th>
+                  <th scope="col">模型名称</th>
+                  <th scope="col">支持输入</th>
+                  <th scope="col">上下文窗口</th>
+                  <th scope="col">说明</th>
+                  <th scope="col">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleModels.map((model) => (
+                  <tr key={model.id}>
+                    <td><code>{model.id}</code></td>
+                    <td><strong title={model.description}>{model.name}</strong></td>
+                    <td><span className="api-model-modalities">{modalityText(model.inputModalities)}</span></td>
+                    <td title={model.contextWindowTokens === null
+                      ? undefined
+                      : `${model.contextWindowTokens.toLocaleString("zh-CN")} tokens`}
+                    >{contextWindowText(model.contextWindowTokens)}</td>
+                    <td>{model.description}</td>
+                    <td>
+                      <CopyButton
+                        target={modelCopyTarget(model.id)}
+                        copied={copied}
+                        label={`复制模型 ID ${model.id}`}
+                        onCopy={() => void copyText(modelCopyTarget(model.id), model.id)}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
       <div className="api-docs-layout">
         <article className="api-reference-content">
           <section className="api-doc-section">
-            <header><span>01</span><div><h2>快速调用</h2><p>{protocol === "openai"
-              ? <>API URL 已包含 <code>/v1</code>，请勿重复拼接。</>
-              : <>API URL 不含版本路径，SDK 会自动请求 <code>/v1/messages</code>。</>}</p></div></header>
+            <header><span>01</span><div><h2>快速调用</h2><p>API URL 已包含 <code>/v1</code>，请勿重复拼接。</p></div></header>
             <div className="api-code-sample api-code-tabs">
               <div className="api-code-sample-toolbar">
                 <div className="api-code-language-tabs" role="tablist" aria-label="快速调用语言">
@@ -286,53 +317,19 @@ export function ContestantApiDocs() {
           </section>
 
           <section className="api-doc-section">
-            <header><span>02</span><div><h2>模型白名单</h2><p>竞赛只开放下表列出的 {visibleModels.length} 个模型 ID；填写其他名称（例如 <code>gpt-4o</code>、<code>claude-sonnet-4</code>）会被拒绝，返回 {protocol === "openai" ? <><code>400 model_not_allowed</code></> : <><code>400 invalid_request_error</code></>}。</p></div></header>
-            <div className="api-model-table">
-              <div className="api-model-table-head"><span>模型 ID</span><span>模型</span><span>支持输入</span><span>说明</span></div>
-              {visibleModels.map((model) => (
-                <div key={model.id}>
-                  <div className="api-model-id">
-                    <code>{model.id}</code>
-                    {model.compatibilityAliases.length > 0 && (
-                      <small>兼容别名 {model.compatibilityAliases.join("、")}</small>
-                    )}
-                  </div>
-                  <b>{model.name}</b>
-                  <span className="api-model-modalities">{modalityText(model.inputModalities)}</span>
-                  <span>{model.description}</span>
-                </div>
-              ))}
-            </div>
-            <p className="api-stream-hint">模型 ID 大小写不敏感。{protocol === "openai"
-              ? <>调用 <code>GET /models</code> 可随时获取同一份白名单。</>
-              : <>Anthropic 兼容入口只兼容 Messages 请求格式，不提供 Claude 模型，<code>model</code> 字段同样只能填写上表中的 ID。</>}</p>
-          </section>
-
-          <section className="api-doc-section">
-            <header><span>03</span><div><h2>接口地址</h2><p>{protocol === "openai"
-              ? <>请求在 HTTP Header 中携带 <code>Authorization: Bearer API_KEY</code>。</>
-              : <>请求携带 <code>x-api-key: API_KEY</code> 和 <code>anthropic-version: 2023-06-01</code>。</>}</p></div></header>
+            <header><span>02</span><div><h2>接口地址</h2><p>请求在 HTTP Header 中携带 <code>Authorization: Bearer API_KEY</code>。</p></div></header>
             <div className="endpoint-list">
-              {protocol === "openai" ? <>
-                <div><b className="http-method get">GET</b><code>/models</code><span>查询当前允许调用的模型</span></div>
-                <div><b className="http-method post">POST</b><code>/chat/completions</code><span>创建对话补全，支持 <code>stream: true</code></span></div>
-              </> : <>
-                <div><b className="http-method post">POST</b><code>/v1/messages</code><span>创建消息，支持文本、图片、工具调用与 <code>stream: true</code></span></div>
-              </>}
+              <div><b className="http-method get">GET</b><code>/models</code><span>查询当前允许调用的模型</span></div>
+              <div><b className="http-method post">POST</b><code>/chat/completions</code><span>创建对话补全，支持 <code>stream: true</code></span></div>
             </div>
-            {protocol === "anthropic" && <p className="api-stream-hint">设置 <code>stream: true</code> 后返回 Anthropic Messages SSE 事件，包括 <code>message_start</code>、内容增量和 <code>message_stop</code>。</p>}
           </section>
 
           {hasVisionModels && (
           <section className="api-doc-section">
-            <header><span>04</span><div><h2>多模态输入</h2><p>{protocol === "openai"
-              ? `白名单中只有 ${visionModelNames} 支持图片与视频理解，输出仍为文本。`
-              : `Anthropic Messages 兼容入口可向白名单中的 ${visionModelNames} 传入图片，输出仍为文本。`}</p></div></header>
-            <div className="api-multimodal-note"><ScanEye /><p><strong>多模态理解，不是图片生成</strong><span>{protocol === "openai"
-              ? "使用 image_url / video_url 内容项；图片可传公网 URL 或 Base64 Data URL。"
-              : `使用 image / source 内容块；Anthropic 兼容入口的图片调用请选择 ${visionModelNames}，视频请使用 OpenAI 接口。`}</span></p></div>
+            <header><span>03</span><div><h2>多模态输入</h2><p>白名单中只有 {visionModelNames} 支持图片与视频理解，输出仍为文本。</p></div></header>
+            <div className="api-multimodal-note"><ScanEye /><p><strong>多模态理解，不是图片生成</strong><span>使用 image_url / video_url 内容项；图片可传公网 URL 或 Base64 Data URL。</span></p></div>
             <div className="api-code-sample">
-              <div><span><Terminal />{protocol === "openai" ? "OpenAI" : "Anthropic"} · 图片理解</span><CopyButton target="vision" copied={copied} label="复制图片理解示例" onCopy={() => void copyText("vision", visionExample)} /></div>
+              <div><span><Terminal />OpenAI · 图片理解</span><CopyButton target="vision" copied={copied} label="复制图片理解示例" onCopy={() => void copyText("vision", visionExample)} /></div>
               <pre><code>{visionExample}</code></pre>
             </div>
             <button type="button" className="api-playground-link" onClick={() => setPlaygroundOpen(true)}><Beaker />在 Playground 中测试</button>
@@ -340,20 +337,13 @@ export function ContestantApiDocs() {
           )}
 
           <section className="api-doc-section">
-            <header><span>{hasVisionModels ? "05" : "04"}</span><div><h2>错误码</h2><p>{quotaEnforced ? "失败请求不会扣减总请求额度。" : "比赛模式不限总额度，失败请求也不会计入调用次数。"}</p></div></header>
+            <header><span>{hasVisionModels ? "04" : "03"}</span><div><h2>错误码</h2><p>{quotaEnforced ? "失败请求不会扣减总请求额度。" : "比赛模式不限总额度，失败请求也不会计入调用次数。"}</p></div></header>
             <div className="api-error-table">
-              {protocol === "openai" ? <>
-                <div><code>invalid_api_key</code><span>API Key 缺失、错误或账号已停用</span><b>401</b></div>
-                <div><code>model_not_allowed</code><span>模型不在竞赛允许列表中</span><b>400</b></div>
-                <div><code>rate_limit_exceeded</code><span>超过每分钟请求频率</span><b>429</b></div>
-                <div><code>quota_exceeded</code><span>{quotaEnforced ? "账号总请求额度已用完" : "比赛模式下不会出现"}</span><b>429</b></div>
-                <div><code>service_suspended</code><span>管理员已暂停模型服务</span><b>503</b></div>
-              </> : <>
-                <div><code>authentication_error</code><span>API Key 缺失、错误或账号已停用</span><b>401</b></div>
-                <div><code>invalid_request_error</code><span>参数、模型或请求体不符合要求</span><b>400</b></div>
-                <div><code>rate_limit_error</code><span>超过每分钟频率或总请求额度</span><b>429</b></div>
-                <div><code>api_error</code><span>模型服务暂停、超时或上游暂不可用</span><b>5xx</b></div>
-              </>}
+              <div><code>invalid_api_key</code><span>API Key 缺失、错误或账号已停用</span><b>401</b></div>
+              <div><code>model_not_allowed</code><span>模型不在竞赛允许列表中</span><b>400</b></div>
+              <div><code>rate_limit_exceeded</code><span>超过每分钟请求频率</span><b>429</b></div>
+              <div><code>quota_exceeded</code><span>{quotaEnforced ? "账号总请求额度已用完" : "比赛模式下不会出现"}</span><b>429</b></div>
+              <div><code>service_suspended</code><span>管理员已暂停模型服务</span><b>503</b></div>
             </div>
           </section>
         </article>
@@ -368,21 +358,19 @@ export function ContestantApiDocs() {
             </dl>
           </section>
           <section>
-            <span className="api-sidebar-label"><Cable />规范与凭证</span>
-            <p className="api-protocol-scope">两套接口共用当前 API Key、每分钟频率、总请求额度和同一份模型白名单。{quotaEnforced ? "" : "比赛模式解除的只是总额度，每分钟频率限制依然有效。"}Anthropic Messages 兼容仅表示请求与响应格式兼容，不代表提供 Claude 模型。</p>
-          </section>
-          <section>
-            <span className="api-sidebar-label"><Boxes />模型白名单 · {visibleModels.length}</span>
-            <div className="api-model-chips">
-              {visibleModels.map((model) => (
-                <code key={model.id}>{model.id}</code>
-              ))}
-            </div>
-            <p className="api-protocol-scope">白名单之外的模型 ID 一律以 400 拒绝，两套接口共用这一份列表，完整说明见“模型白名单”一节。</p>
+            <span className="api-sidebar-label"><Braces />规范与凭证</span>
+            <p className="api-protocol-scope">模型 API 统一使用 OpenAI Chat Completions 兼容规范和 Bearer 凭证。{quotaEnforced ? "" : "比赛模式解除的只是总额度，每分钟频率限制依然有效。"}</p>
           </section>
           <div className="api-security-note"><KeyRound /><p><strong>凭证仅限本人使用</strong><span>不要将 API Key 写入公开代码仓库或发给其他选手。</span></p></div>
         </aside>
       </div>
+      <section className="api-model-access-help" id="model-access-help">
+        <CircleHelp />
+        <div>
+          <h2>列表外模型申请</h2>
+          <p>如需使用当前列表之外的模型，请联系赛事方并提供模型名称和使用需求，由赛事方统一评估、配置和开放。</p>
+        </div>
+      </section>
       </main>
       {playgroundOpen && (
         <ContestantPlayground

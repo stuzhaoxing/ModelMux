@@ -34,7 +34,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const origin = configuredBase ?? request.nextUrl.origin;
     const payload: ContestantApiAccess = {
       apiBase: `${origin}/v1`,
-      anthropicApiBase: origin,
       apiKey: access.apiKey,
       requestQuota: access.requestQuota,
       requestsUsed: access.requestsUsed,
@@ -49,10 +48,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         id: model.alias,
         name: model.displayName,
         description: model.description,
-        compatibilityAliases: model.compatibilityAliases,
-        inputModalities: model.family === "qwen"
-          ? ["text", "image", "video"]
-          : ["text"],
+        family: model.family,
+        inputModalities: model.inputModalities,
+        contextWindowTokens: model.contextWindowTokens,
       })),
     };
 
