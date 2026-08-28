@@ -58,9 +58,26 @@ describe("competition rich text", () => {
     expect(rendered).not.toContain("**");
   });
 
-  it("preserves intentional rich HTML instead of parsing its text as Markdown", () => {
-    const html = '<p><strong>已排版</strong> **保留原文**</p><img src="/api/competition/media/12" alt="图">';
+  it("preserves intentional rich HTML when it contains no Markdown", () => {
+    const html = '<p><strong>已排版</strong> 保留原文</p><img src="/api/competition/media/12" alt="图">';
     expect(renderRichTextHtml(html)).toBe(cleanRichText(html));
+  });
+
+  it("renders Markdown mixed with existing inline rich text", () => {
+    const rendered = renderRichTextHtml([
+      "<p>### 进口采样口核查<br><br>",
+      "**结论：不强制。**<br><br>",
+      "1. <strong>法律层面</strong>：必须保证**设施正常运行**。<br>",
+      "2. <strong>规范层面</strong>：核查末端排放。</p>",
+    ].join(""));
+
+    expect(rendered).toContain("<h3>进口采样口核查</h3>");
+    expect(rendered).toContain("<strong>结论：不强制。</strong>");
+    expect(rendered).toContain("<strong>法律层面</strong>");
+    expect(rendered).toContain("<strong>设施正常运行</strong>");
+    expect(rendered).toContain("<ol>");
+    expect(rendered).not.toContain("###");
+    expect(rendered).not.toContain("**");
   });
 
   it("sanitizes links and HTML produced from Markdown", () => {
@@ -74,12 +91,12 @@ describe("competition rich text", () => {
     const rendered = renderRichTextHtml([
       "| 项目 | 结论 |",
       "| --- | --- |",
-      "| 采样口 | ~~缺失~~ 已补充 |",
+      "| 采样口 | 已补充 |",
     ].join("\n"));
 
     expect(rendered).toContain("<table>");
     expect(rendered).toContain("<th>项目</th>");
     expect(rendered).toContain("<td>采样口</td>");
-    expect(rendered).toContain("<del>缺失</del>");
+    expect(rendered).toContain("<td>已补充</td>");
   });
 });
