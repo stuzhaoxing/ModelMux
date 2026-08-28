@@ -1,5 +1,5 @@
 import { hasChildren, isTag, isText, type AnyNode } from "domhandler";
-import { parseDocument } from "htmlparser2";
+import { DomUtils, parseDocument } from "htmlparser2";
 import { marked } from "marked";
 import sanitizeHtml from "sanitize-html";
 
@@ -11,8 +11,7 @@ const attachmentClasses = new Set([
   "attachment-download",
 ]);
 
-const semanticRichTextPattern = /<(?:a|blockquote|code|del|em|h[1-6]|hr|img|li|ol|pre|s|small|span|strong|table|tbody|td|th|thead|tr|u|ul)\b/i;
-const markdownFormattingPattern = /(^|\n)\s{0,3}(?:#{1,6}\s|>|```|~~~|[-+*]\s|\d+[.)]\s)|(?:\*\*|__|~~|`[^`]+`|!?(?:\[[^\]]+\])\([^\s)]+(?:\s+"[^"]*")?\))/m;
+const markdownFormattingPattern = /(^|\n)\s{0,3}(?:#{1,6}\s|>|```|~~~|[-+*]\s|\d+[.)]\s)|\n\s*\|?\s*:?-{3,}|(?:\*\*|__|~~|`[^`]+`|!?(?:\[[^\]]+\])\([^\s)]+(?:\s+"[^"]*")?\))/m;
 
 function cleanAttachmentName(value: string | undefined): string {
   const name = value?.trim() || "未命名附件";
@@ -129,6 +128,10 @@ function markdownTextFromHtmlNode(node: AnyNode): string {
   if (!hasChildren(node)) return "";
   if (isTag(node) && node.name === "br") return "\n";
 
+  if (isTag(node) && node.name !== "p") {
+    return DomUtils.getOuterHTML(node);
+  }
+
   const content = node.children.map(markdownTextFromHtmlNode).join("");
   return isTag(node) && node.name === "p" ? `${content}\n\n` : content;
 }
@@ -140,7 +143,7 @@ function markdownTextFromHtmlNode(node: AnyNode): string {
  */
 export function renderRichTextHtml(input: string): string {
   const cleanHtml = cleanRichText(input);
-  if (!cleanHtml || semanticRichTextPattern.test(cleanHtml)) return cleanHtml;
+  if (!cleanHtml) return cleanHtml;
 
   const markdown = markdownTextFromHtmlNode(parseDocument(cleanHtml))
     .replace(/\u00a0/g, " ")
