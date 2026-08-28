@@ -1,0 +1,24 @@
+{
+  "generatedAt": "2026-08-27T08:07:43.035Z",
+  "shot": "05",
+  "title": "验证本地知识库正常运行",
+  "voice": "Tingting",
+  "voiceRate": 165,
+  "durationSeconds": 23.33,
+  "video": "05-验证本地知识库正常运行.mp4",
+  "subtitles": "05-验证本地知识库正常运行.srt",
+  "scenes": [
+    {
+      "scene": 1,
+      "frame": "10-pipeline",
+      "speechDurationSeconds": 9.813,
+      "durationSeconds": 10.363
+    },
+    {
+      "scene": 2,
+      "frame": "10-errors",
+      "speechDurationSeconds": 12.417,
+      "durationSeconds": 12.967
+    }
+  ]
+}

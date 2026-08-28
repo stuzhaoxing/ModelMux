@@ -25,7 +25,7 @@ function countFor(entries: ActivityEntry[], filter: LogFilter): number {
 }
 
 function roleLabel(entry: ActivityEntry): string {
-  return entry.actorRole === "judge" ? "评委" : "选手";
+  return entry.actorRole === "judge" ? "考务" : "选手";
 }
 
 function subjectLine(entry: ActivityEntry): string | null {

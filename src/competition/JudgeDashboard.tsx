@@ -83,6 +83,10 @@ export function JudgeDashboard({
     try {
       const response = await fetch("/api/competition/judge/answers/export", { cache: "no-store" });
       if (response.status === 401) {
+        window.dispatchEvent(new Event("modelmux-admin-unauthorized"));
+        return;
+      }
+      if (response.status === 401) {
         const next = `${window.location.pathname}${window.location.search}`;
         window.location.replace(`/login?next=${encodeURIComponent(next)}`);
         return;
@@ -112,7 +116,7 @@ export function JudgeDashboard({
     <div className="judge-dashboard">
       <header className="dashboard-heading">
         <div>
-          <span>评委总览</span>
+          <span>考务总览</span>
           <h1>题目发布与答题概览</h1>
         </div>
         <button type="button" className="primary-action" disabled={!canCreateQuestions} title={canCreateQuestions ? "新建题目" : "题目已统一发布"} onClick={onCreateQuestion}>
@@ -158,7 +162,7 @@ export function JudgeDashboard({
           <div className="dashboard-start-controls">
             <label>
               <span>比赛时长</span>
-              <span><input type="number" min="1" max="1440" step="1" inputMode="numeric" value={durationInput} disabled={competitionPending} onChange={(event) => onDurationChange(event.target.value)} /> 分钟</span>
+              <span><input type="number" min="1" step="1" inputMode="numeric" value={durationInput} disabled={competitionPending} onChange={(event) => onDurationChange(event.target.value)} /> 分钟</span>
             </label>
             <button
               type="button"

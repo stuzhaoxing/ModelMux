@@ -1,0 +1,30 @@
+{
+  "generatedAt": "2026-08-27T08:28:58.049Z",
+  "shot": "09",
+  "title": "检索分析与人工核验",
+  "voice": "Tingting",
+  "voiceRate": 165,
+  "durationSeconds": 23.522,
+  "video": "09-检索分析与人工核验.mp4",
+  "subtitles": "09-检索分析与人工核验.srt",
+  "scenes": [
+    {
+      "scene": 1,
+      "frame": "15-retrieval",
+      "speechDurationSeconds": 7.201,
+      "durationSeconds": 7.751
+    },
+    {
+      "scene": 2,
+      "frame": "15-classify",
+      "speechDurationSeconds": 8.619,
+      "durationSeconds": 9.169
+    },
+    {
+      "scene": 3,
+      "frame": "15-structure",
+      "speechDurationSeconds": 6.053,
+      "durationSeconds": 6.603
+    }
+  ]
+}

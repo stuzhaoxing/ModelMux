@@ -1,9 +1,6 @@
 import mysql, { type Pool, type RowDataPacket } from "mysql2/promise";
 
-import {
-  contestantDefaultRequestQuota,
-  generateContestantApiKey,
-} from "./api-access";
+import { generateContestantApiKey } from "./api-access";
 
 export type SqlValue = string | number | boolean | Date | Buffer | null;
 
@@ -13,7 +10,7 @@ declare global {
   var __modelmuxCompetitionSchemaVersion: number | undefined;
 }
 
-const competitionSchemaVersion = 11;
+const competitionSchemaVersion = 14;
 
 const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS competition_users (
@@ -24,11 +21,6 @@ const schemaStatements = [
     password_hash VARCHAR(255) NOT NULL,
     event_password VARCHAR(200) NULL,
     api_key VARCHAR(96) NULL,
-    api_request_quota INT UNSIGNED NOT NULL DEFAULT 1000,
-    api_requests_used INT UNSIGNED NOT NULL DEFAULT 0,
-    api_input_tokens_used BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    api_output_tokens_used BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    api_total_tokens_used BIGINT UNSIGNED NOT NULL DEFAULT 0,
     active BOOLEAN NOT NULL DEFAULT TRUE,
     deleted_at DATETIME(3) NULL,
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -60,7 +52,7 @@ const schemaStatements = [
     content_html MEDIUMTEXT NOT NULL,
     status ENUM('draft', 'published', 'closed') NOT NULL DEFAULT 'draft',
     version INT UNSIGNED NOT NULL DEFAULT 1,
-    created_by BIGINT UNSIGNED NOT NULL,
+    created_by BIGINT UNSIGNED NULL,
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
     published_at DATETIME(3) NULL,
@@ -73,7 +65,7 @@ const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS competition_control (
     id TINYINT UNSIGNED NOT NULL,
     status ENUM('not_started', 'running', 'ended') NOT NULL DEFAULT 'not_started',
-    duration_minutes SMALLINT UNSIGNED NOT NULL DEFAULT 90,
+    duration_minutes BIGINT UNSIGNED NOT NULL DEFAULT 90,
     started_at DATETIME(3) NULL,
     ends_at DATETIME(3) NULL,
     stopped_at DATETIME(3) NULL,
@@ -102,7 +94,7 @@ const schemaStatements = [
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
   `CREATE TABLE IF NOT EXISTS competition_attachments (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    uploader_id BIGINT UNSIGNED NOT NULL,
+    uploader_id BIGINT UNSIGNED NULL,
     uploader_role ENUM('judge', 'contestant') NOT NULL,
     purpose ENUM('question', 'answer') NOT NULL,
     kind ENUM('image', 'file') NOT NULL DEFAULT 'image',
@@ -143,24 +135,6 @@ const schemaStatements = [
     KEY competition_events_created_at (created_at),
     CONSTRAINT competition_events_question_fk FOREIGN KEY (question_id)
       REFERENCES competition_questions(id) ON DELETE CASCADE
-  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
-  `CREATE TABLE IF NOT EXISTS competition_token_minutes (
-    minute_at DATETIME NOT NULL,
-    input_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    output_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    total_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    PRIMARY KEY (minute_at)
-  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
-  `CREATE TABLE IF NOT EXISTS competition_contestant_token_minutes (
-    minute_at DATETIME NOT NULL,
-    contestant_id BIGINT UNSIGNED NOT NULL,
-    input_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    output_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    total_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    PRIMARY KEY (minute_at, contestant_id),
-    KEY competition_contestant_token_minutes_contestant (contestant_id, minute_at),
-    CONSTRAINT competition_contestant_token_minutes_user_fk FOREIGN KEY (contestant_id)
-      REFERENCES competition_users(id) ON DELETE CASCADE
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
 ];
 
@@ -221,54 +195,16 @@ export async function ensureCompetitionSchema(): Promise<void> {
           "ALTER TABLE competition_users ADD COLUMN deleted_at DATETIME(3) NULL AFTER active",
         );
       }
-      const [apiAccessColumns] = await pool.execute<RowDataPacket[]>(
+      const [apiKeyColumns] = await pool.execute<RowDataPacket[]>(
         `SELECT COLUMN_NAME
          FROM INFORMATION_SCHEMA.COLUMNS
          WHERE TABLE_SCHEMA = DATABASE()
            AND TABLE_NAME = 'competition_users'
-           AND COLUMN_NAME IN ('api_key', 'api_request_quota', 'api_requests_used')`,
+           AND COLUMN_NAME = 'api_key'`,
       );
-      const apiAccessColumnNames = new Set(
-        apiAccessColumns.map((column) => String(column.COLUMN_NAME)),
-      );
-      if (!apiAccessColumnNames.has("api_key")) {
+      if (apiKeyColumns.length === 0) {
         await pool.execute(
           "ALTER TABLE competition_users ADD COLUMN api_key VARCHAR(96) NULL AFTER event_password",
-        );
-      }
-      if (!apiAccessColumnNames.has("api_request_quota")) {
-        await pool.execute(
-          "ALTER TABLE competition_users ADD COLUMN api_request_quota INT UNSIGNED NOT NULL DEFAULT 1000 AFTER api_key",
-        );
-      }
-      if (!apiAccessColumnNames.has("api_requests_used")) {
-        await pool.execute(
-          "ALTER TABLE competition_users ADD COLUMN api_requests_used INT UNSIGNED NOT NULL DEFAULT 0 AFTER api_request_quota",
-        );
-      }
-      const [tokenUsageColumns] = await pool.execute<RowDataPacket[]>(
-        `SELECT COLUMN_NAME
-         FROM INFORMATION_SCHEMA.COLUMNS
-         WHERE TABLE_SCHEMA = DATABASE()
-           AND TABLE_NAME = 'competition_users'
-           AND COLUMN_NAME IN ('api_input_tokens_used', 'api_output_tokens_used', 'api_total_tokens_used')`,
-      );
-      const tokenUsageColumnNames = new Set(
-        tokenUsageColumns.map((column) => String(column.COLUMN_NAME)),
-      );
-      if (!tokenUsageColumnNames.has("api_input_tokens_used")) {
-        await pool.execute(
-          "ALTER TABLE competition_users ADD COLUMN api_input_tokens_used BIGINT UNSIGNED NOT NULL DEFAULT 0 AFTER api_requests_used",
-        );
-      }
-      if (!tokenUsageColumnNames.has("api_output_tokens_used")) {
-        await pool.execute(
-          "ALTER TABLE competition_users ADD COLUMN api_output_tokens_used BIGINT UNSIGNED NOT NULL DEFAULT 0 AFTER api_input_tokens_used",
-        );
-      }
-      if (!tokenUsageColumnNames.has("api_total_tokens_used")) {
-        await pool.execute(
-          "ALTER TABLE competition_users ADD COLUMN api_total_tokens_used BIGINT UNSIGNED NOT NULL DEFAULT 0 AFTER api_output_tokens_used",
         );
       }
       const [apiKeyIndexes] = await pool.execute<RowDataPacket[]>(
@@ -283,13 +219,6 @@ export async function ensureCompetitionSchema(): Promise<void> {
           "ALTER TABLE competition_users ADD UNIQUE KEY competition_users_api_key (api_key)",
         );
       }
-      await pool.execute(
-        `UPDATE competition_users
-         SET api_request_quota = 0, api_requests_used = 0,
-             api_input_tokens_used = 0, api_output_tokens_used = 0,
-             api_total_tokens_used = 0
-         WHERE role = 'judge'`,
-      );
       const [contestantsWithoutKeys] = await pool.execute<RowDataPacket[]>(
         `SELECT id FROM competition_users
          WHERE role = 'contestant' AND api_key IS NULL AND deleted_at IS NULL`,
@@ -297,11 +226,10 @@ export async function ensureCompetitionSchema(): Promise<void> {
       for (const contestant of contestantsWithoutKeys) {
         await pool.execute(
           `UPDATE competition_users
-           SET api_key = ?, api_request_quota = ?
+           SET api_key = ?
            WHERE id = ? AND api_key IS NULL`,
           [
             generateContestantApiKey(),
-            contestantDefaultRequestQuota(),
             Number(contestant.id),
           ],
         );
@@ -318,6 +246,12 @@ export async function ensureCompetitionSchema(): Promise<void> {
           "ALTER TABLE competition_sessions ADD COLUMN revoked_at DATETIME(3) NULL AFTER expires_at",
         );
       }
+      await pool.execute(
+        `UPDATE competition_sessions sessions
+         INNER JOIN competition_users users ON users.id = sessions.user_id
+         SET sessions.revoked_at = CURRENT_TIMESTAMP(3)
+         WHERE users.role = 'judge' AND sessions.revoked_at IS NULL`,
+      );
       const [attachmentColumns] = await pool.execute<RowDataPacket[]>(
         `SELECT COLUMN_NAME, DATA_TYPE
          FROM INFORMATION_SCHEMA.COLUMNS
@@ -336,6 +270,43 @@ export async function ensureCompetitionSchema(): Promise<void> {
       if (attachmentColumnTypes.get("byte_size") !== "bigint") {
         await pool.execute(
           "ALTER TABLE competition_attachments MODIFY COLUMN byte_size BIGINT UNSIGNED NOT NULL",
+        );
+      }
+      const [adminOwnedColumns] = await pool.execute<RowDataPacket[]>(
+        `SELECT TABLE_NAME, COLUMN_NAME, IS_NULLABLE
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND (
+             (TABLE_NAME = 'competition_questions' AND COLUMN_NAME = 'created_by')
+             OR (TABLE_NAME = 'competition_attachments' AND COLUMN_NAME = 'uploader_id')
+           )`,
+      );
+      const nullableByColumn = new Map(
+        adminOwnedColumns.map((column) => [
+          `${String(column.TABLE_NAME)}.${String(column.COLUMN_NAME)}`,
+          String(column.IS_NULLABLE) === "YES",
+        ]),
+      );
+      if (!nullableByColumn.get("competition_questions.created_by")) {
+        await pool.execute(
+          "ALTER TABLE competition_questions MODIFY COLUMN created_by BIGINT UNSIGNED NULL",
+        );
+      }
+      if (!nullableByColumn.get("competition_attachments.uploader_id")) {
+        await pool.execute(
+          "ALTER TABLE competition_attachments MODIFY COLUMN uploader_id BIGINT UNSIGNED NULL",
+        );
+      }
+      const [competitionControlColumns] = await pool.execute<RowDataPacket[]>(
+        `SELECT DATA_TYPE
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'competition_control'
+           AND COLUMN_NAME = 'duration_minutes'`,
+      );
+      if (String(competitionControlColumns[0]?.DATA_TYPE) !== "bigint") {
+        await pool.execute(
+          "ALTER TABLE competition_control MODIFY COLUMN duration_minutes BIGINT UNSIGNED NOT NULL DEFAULT 90",
         );
       }
     })().catch((error) => {

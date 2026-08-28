@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { competitionError, requireSameOrigin, requireSession } from "@/lib/competition/http";
+import { competitionError, requireJudgeOperator, requireSameOrigin, requireSession } from "@/lib/competition/http";
 import {
   discardMediaUpload,
   receiveMediaUpload,
@@ -16,18 +16,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   try {
     const session = await requireSession(request);
-    if (session instanceof NextResponse) return session;
+    const admin = requireJudgeOperator(request);
+    if (session instanceof NextResponse && admin instanceof NextResponse) return session;
 
     const upload = await receiveMediaUpload(request);
     const role = upload.purpose === "question" ? "judge" : "contestant";
-    const user = session.role === role ? session : null;
-    if (!user) {
+    const uploaderId = role === "judge"
+      ? admin instanceof NextResponse ? undefined : admin.id
+      : session instanceof NextResponse || session.role !== "contestant" ? undefined : session.id;
+    if (uploaderId === undefined) {
       await discardMediaUpload(upload);
       return NextResponse.json({ error: "当前账号无权上传这类附件" }, { status: 403 });
     }
 
     return NextResponse.json(
-      await registerMediaUpload({ upload, uploaderId: user.id, uploaderRole: role }),
+      await registerMediaUpload({ upload, uploaderId, uploaderRole: role }),
       { status: 201 },
     );
   } catch (error) {

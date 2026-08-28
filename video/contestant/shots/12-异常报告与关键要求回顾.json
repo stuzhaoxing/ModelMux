@@ -1,0 +1,36 @@
+{
+  "generatedAt": "2026-08-27T08:34:14.559Z",
+  "shot": "12",
+  "title": "异常报告与关键要求回顾",
+  "voice": "Tingting",
+  "voiceRate": 165,
+  "durationSeconds": 43.143,
+  "video": "12-异常报告与关键要求回顾.mp4",
+  "subtitles": "12-异常报告与关键要求回顾.srt",
+  "scenes": [
+    {
+      "scene": 1,
+      "frame": "19-errors",
+      "speechDurationSeconds": 9.524,
+      "durationSeconds": 10.074
+    },
+    {
+      "scene": 2,
+      "frame": "19-ambiguous",
+      "speechDurationSeconds": 9.613,
+      "durationSeconds": 10.163
+    },
+    {
+      "scene": 3,
+      "frame": "19-report",
+      "speechDurationSeconds": 10.37,
+      "durationSeconds": 10.92
+    },
+    {
+      "scene": 4,
+      "frame": "20-end",
+      "speechDurationSeconds": 11.436,
+      "durationSeconds": 11.986
+    }
+  ]
+}

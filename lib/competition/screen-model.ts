@@ -30,11 +30,6 @@ export interface CompetitionScreenContestant {
   submitted: number;
   drafting: number;
   notStarted: number;
-  requestCount: number;
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-  tokenMinutes: number[];
   lastActivityAt: string | null;
   durationSeconds: number | null;
   durationKind: CompetitionScreenDurationKind | null;
@@ -49,10 +44,6 @@ export interface CompetitionScreenSummary {
   unfinished: number;
   drafting: number;
   notStarted: number;
-  requestCount: number;
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
 }
 
 export interface CompetitionScreenSnapshot {
@@ -62,7 +53,6 @@ export interface CompetitionScreenSnapshot {
   schedule: CompetitionScreenSchedule;
   competition: CompetitionControl;
   summary: CompetitionScreenSummary;
-  tokenMinutes: number[];
   contestants: CompetitionScreenContestant[];
   simulation: CompetitionScreenSimulation | null;
 }
@@ -134,7 +124,7 @@ interface CompetitionCountdownEnv {
 export function competitionCountdownMinutes(env: NodeJS.ProcessEnv | CompetitionCountdownEnv = process.env): number {
   const values = env as CompetitionCountdownEnv;
   const configured = Number(values.MODELMUX_COMPETITION_DURATION_MINUTES?.trim());
-  if (Number.isSafeInteger(configured) && configured >= 1 && configured <= 24 * 60) return configured;
+  if (Number.isSafeInteger(configured) && configured >= 1) return configured;
   const legacySchedule = parseCompetitionSchedule(
     values.MODELMUX_COMPETITION_START_AT,
     values.MODELMUX_COMPETITION_END_AT,
@@ -278,26 +268,4 @@ export function competitionScreenProgressChanges(
       questionTotal: next.summary.questionTotal,
     }] : [];
   });
-}
-
-export function competitionScreenTokenBarScales(input: {
-  tokenMinutes: number[];
-  maxMinuteTokens: number;
-  count?: number;
-}): number[] {
-  const count = Math.max(1, Math.min(90, Math.floor(input.count ?? 90)));
-  const recent = input.tokenMinutes.slice(-count);
-  const padded = [...Array<number>(count - recent.length).fill(0), ...recent];
-  return padded.map((value) => input.maxMinuteTokens > 0
-    ? Math.max(0, Math.min(1, value / input.maxMinuteTokens))
-    : 0);
-}
-
-export function competitionMockTokenMinute(tick: number): number {
-  const safeTick = Number.isFinite(tick) ? Math.max(0, Math.floor(tick)) : 0;
-  const wave = 46_000_000
-    + Math.sin(safeTick * 0.72) * 18_000_000
-    + Math.sin(safeTick * 0.21) * 9_500_000
-    + (safeTick % 9 === 0 ? 22_000_000 : 0);
-  return Math.max(6_000_000, Math.round(wave / 100_000) * 100_000);
 }

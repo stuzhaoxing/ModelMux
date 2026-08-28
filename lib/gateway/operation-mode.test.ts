@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   operationModeState,
-  quotaEnforced,
   setOperationMode,
 } from "./operation-mode";
 
@@ -23,7 +22,7 @@ describe.sequential("gateway operation mode", () => {
     await rm(directory, { force: true, recursive: true });
   });
 
-  it("defaults to the quota-enforcing test mode", async () => {
+  it("defaults to test mode", async () => {
     await expect(operationModeState()).resolves.toEqual({
       mode: "test",
       updatedAt: null,
@@ -46,7 +45,7 @@ describe.sequential("gateway operation mode", () => {
     });
   });
 
-  it("falls back to limited quota when the persisted mode cannot be trusted", async () => {
+  it("falls back to test mode when the persisted mode cannot be trusted", async () => {
     await writeFile(
       path.join(directory, "gateway-operation-mode.json"),
       '{"mode":"unlimited"}\n',
@@ -57,10 +56,5 @@ describe.sequential("gateway operation mode", () => {
       updatedAt: null,
       stateFileValid: false,
     });
-  });
-
-  it("only enforces the total request quota in test mode", () => {
-    expect(quotaEnforced("test")).toBe(true);
-    expect(quotaEnforced("competition")).toBe(false);
   });
 });

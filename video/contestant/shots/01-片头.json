@@ -1,0 +1,30 @@
+{
+  "generatedAt": "2026-08-27T06:59:59.378Z",
+  "shot": "01",
+  "title": "片头",
+  "voice": "Tingting",
+  "voiceRate": 165,
+  "durationSeconds": 27.295,
+  "video": "01-片头.mp4",
+  "subtitles": "01-片头.srt",
+  "scenes": [
+    {
+      "scene": 1,
+      "asset": "title",
+      "speechDurationSeconds": 6.385,
+      "durationSeconds": 6.935
+    },
+    {
+      "scene": 2,
+      "asset": "scope",
+      "speechDurationSeconds": 12.521,
+      "durationSeconds": 13.071
+    },
+    {
+      "scene": 3,
+      "asset": "notice",
+      "speechDurationSeconds": 6.739,
+      "durationSeconds": 7.289
+    }
+  ]
+}

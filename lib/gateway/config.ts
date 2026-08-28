@@ -1,4 +1,4 @@
-import { quotaEnforced, type OperationModeState } from "./operation-mode";
+import type { OperationModeState } from "./operation-mode";
 import type {
   DeploymentMode,
   GatewayConfig,
@@ -7,14 +7,11 @@ import type {
   ModelInputModality,
   ModelRouteGroup,
   ModelTier,
-  ProviderAdapter,
   ProviderRoute,
   PublicModelRouteGroup,
 } from "./types";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 300_000;
-const DEFAULT_MAX_BODY_BYTES = 2 * 1024 * 1024;
-const DEFAULT_RATE_LIMIT_RPM = 60;
 
 function commaList(value: string | undefined): string[] {
   return (value ?? "")
@@ -258,7 +255,6 @@ function defaultModels(env: NodeJS.ProcessEnv): ModelRouteGroup[] {
       upstreamModel: officialModel,
       apiKeyEnv: "DEEPSEEK_API_KEYS",
       priority: 100,
-      adapter: "deepseek",
     },
     {
       provider: "siliconflow",
@@ -266,7 +262,6 @@ function defaultModels(env: NodeJS.ProcessEnv): ModelRouteGroup[] {
       upstreamModel: siliconflowModel,
       apiKeyEnv: "SILICONFLOW_API_KEYS",
       priority: 70,
-      adapter: "siliconflow",
     },
   ];
   const qwenRoutes = (
@@ -279,7 +274,6 @@ function defaultModels(env: NodeJS.ProcessEnv): ModelRouteGroup[] {
       upstreamModel: officialModel,
       apiKeyEnv: "DASHSCOPE_API_KEYS",
       priority: 100,
-      adapter: "dashscope",
     },
     {
       provider: "siliconflow",
@@ -287,7 +281,6 @@ function defaultModels(env: NodeJS.ProcessEnv): ModelRouteGroup[] {
       upstreamModel: siliconflowModel,
       apiKeyEnv: "SILICONFLOW_API_KEYS",
       priority: 70,
-      adapter: "siliconflow",
     },
   ];
   const dashscopeDirectRoute = (
@@ -300,7 +293,6 @@ function defaultModels(env: NodeJS.ProcessEnv): ModelRouteGroup[] {
       upstreamModel: model,
       apiKeyEnv: "DASHSCOPE_API_KEYS",
       priority: 100,
-      adapter: "dashscope",
     },
   ];
   const arkRoute = (model: string): ProviderRoute[] => [
@@ -310,7 +302,6 @@ function defaultModels(env: NodeJS.ProcessEnv): ModelRouteGroup[] {
       upstreamModel: model,
       apiKeyEnv: "ARK_API_KEYS",
       priority: 100,
-      adapter: "openai",
       chatCompletionsPath: "/v3/chat/completions",
     },
   ];
@@ -481,15 +472,6 @@ function defaultModels(env: NodeJS.ProcessEnv): ModelRouteGroup[] {
   return models;
 }
 
-function isProviderAdapter(value: unknown): value is ProviderAdapter {
-  return (
-    value === "openai" ||
-    value === "deepseek" ||
-    value === "dashscope" ||
-    value === "siliconflow"
-  );
-}
-
 function isProviderRoute(value: unknown): value is ProviderRoute {
   if (!value || typeof value !== "object") return false;
   const route = value as Record<string, unknown>;
@@ -500,7 +482,6 @@ function isProviderRoute(value: unknown): value is ProviderRoute {
     typeof route.apiKeyEnv === "string" &&
     typeof route.priority === "number" &&
     Number.isFinite(route.priority) &&
-    (route.adapter === undefined || isProviderAdapter(route.adapter)) &&
     (route.chatCompletionsPath === undefined ||
       (typeof route.chatCompletionsPath === "string" &&
         route.chatCompletionsPath.startsWith("/")))
@@ -558,19 +539,10 @@ export function loadGatewayConfig(
     publicBaseUrl: optionalBaseUrl(env.MODELMUX_PUBLIC_BASE_URL),
     internalBaseUrl: optionalBaseUrl(env.MODELMUX_INTERNAL_BASE_URL),
     externalBaseUrl: optionalBaseUrl(env.MODELMUX_EXTERNAL_BASE_URL),
-    allowAnonymous: env.MODELMUX_ALLOW_ANONYMOUS === "true",
     clientKeys: commaList(env.MODELMUX_CLIENT_KEYS),
-    rateLimitRpm: positiveInteger(
-      env.MODELMUX_RATE_LIMIT_RPM,
-      DEFAULT_RATE_LIMIT_RPM,
-    ),
     requestTimeoutMs: positiveInteger(
       env.MODELMUX_REQUEST_TIMEOUT_MS,
       DEFAULT_REQUEST_TIMEOUT_MS,
-    ),
-    maxBodyBytes: positiveInteger(
-      env.MODELMUX_MAX_BODY_BYTES,
-      DEFAULT_MAX_BODY_BYTES,
     ),
     corsOrigins: commaList(env.MODELMUX_CORS_ORIGINS),
     models: configuredModels(env),
@@ -619,7 +591,6 @@ export function gatewayStatus(
     model.routes.some((route) => route.configured),
   );
   const clientAuthConfigured =
-    config.allowAnonymous ||
     config.clientKeys.length > 0 ||
     Boolean(env.MODELMUX_DATABASE_URL?.trim());
   const apiOrigin = config.publicBaseUrl ?? requestOrigin;
@@ -640,16 +611,12 @@ export function gatewayStatus(
     startedAt,
     providerConfigured,
     clientAuthConfigured,
-    allowAnonymous: config.allowAnonymous,
-    rateLimitRpm: config.rateLimitRpm,
-    maxBodyBytes: config.maxBodyBytes,
     serviceEnabled: serviceState.enabled,
     serviceStateUpdatedAt: serviceState.updatedAt,
     serviceStateFileValid: serviceState.stateFileValid,
     operationMode: modeState.mode,
     operationModeUpdatedAt: modeState.updatedAt,
     operationModeStateFileValid: modeState.stateFileValid,
-    quotaEnforced: quotaEnforced(modeState.mode),
     modelAliases,
   };
 }

@@ -32,7 +32,7 @@ export function judgeViewFromPath(pathname: string): JudgeView {
 }
 
 export const roleHomeRoutes: Record<CompetitionRole, string> = {
-  judge: judgeViewRoutes.dashboard,
+  judge: "/admin/competition",
   contestant: contestantViewRoutes.questions,
 };
 
@@ -58,6 +58,7 @@ export function loginRedirectTarget(
   role: CompetitionRole,
   next: string | null | undefined,
 ): string {
+  if (role === "judge") return roleHomeRoutes.judge;
   if (!next || !next.startsWith("/")) return roleHomeRoutes[role];
   return roleFromPath(next) === role ? next : roleHomeRoutes[role];
 }

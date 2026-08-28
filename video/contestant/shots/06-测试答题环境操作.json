@@ -1,0 +1,36 @@
+{
+  "generatedAt": "2026-08-27T08:07:55.143Z",
+  "shot": "06",
+  "title": "测试答题环境操作",
+  "voice": "Tingting",
+  "voiceRate": 165,
+  "durationSeconds": 29.209,
+  "video": "06-测试答题环境操作.mp4",
+  "subtitles": "06-测试答题环境操作.srt",
+  "scenes": [
+    {
+      "scene": 1,
+      "frame": "07-nav",
+      "speechDurationSeconds": 8.897,
+      "durationSeconds": 9.447
+    },
+    {
+      "scene": 2,
+      "frame": "11-flow",
+      "speechDurationSeconds": 8.262,
+      "durationSeconds": 8.812
+    },
+    {
+      "scene": 3,
+      "frame": "11-save",
+      "speechDurationSeconds": 4.528,
+      "durationSeconds": 5.078
+    },
+    {
+      "scene": 4,
+      "frame": "11-lock",
+      "speechDurationSeconds": 5.322,
+      "durationSeconds": 5.872
+    }
+  ]
+}

@@ -4,7 +4,6 @@ import {
   AlertCircle,
   Beaker,
   Braces,
-  Gauge,
   ImagePlus,
   LoaderCircle,
   Play,
@@ -16,7 +15,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   buildPlaygroundApiCall,
-  playgroundImageMaxBytes,
   playgroundRequestSchema,
 } from "@/lib/competition/playground";
 import type { ContestantApiAccess } from "@/lib/competition/types";
@@ -42,7 +40,6 @@ interface PlaygroundResult {
   payload: PlaygroundCompletion;
   provider: string | null;
   durationMs: number;
-  quotaRemaining: number | null;
 }
 
 const acceptedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -80,11 +77,9 @@ function fileDataUrl(file: File): Promise<string> {
 export function ContestantPlayground({
   access,
   onClose,
-  onRequestComplete,
 }: {
   access: ContestantApiAccess;
   onClose: () => void;
-  onRequestComplete: () => void | Promise<void>;
 }) {
   const [model, setModel] = useState(access.models[0]?.id ?? "");
   const [systemPrompt, setSystemPrompt] = useState("");
@@ -154,10 +149,6 @@ export function ContestantPlayground({
       setError("仅支持 PNG、JPG 或 WebP 图片");
       return;
     }
-    if (file.size > playgroundImageMaxBytes) {
-      setError("图片不能超过 1 MB");
-      return;
-    }
     try {
       setImage({ name: file.name, dataUrl: await fileDataUrl(file) });
       setRemoteImageUrl("");
@@ -193,17 +184,11 @@ export function ContestantPlayground({
       const call = buildPlaygroundApiCall(access.apiBase, access.apiKey, parsed.data);
       const response = await fetch(call.path, { ...call.init, signal: controller.signal });
       const payload = await response.json().catch(() => ({})) as PlaygroundCompletion;
-      void onRequestComplete();
       if (!response.ok) throw new Error(responseError(payload, response.status));
-      const quotaRemainingHeader = response.headers.get("X-Quota-Remaining");
-      const quotaRemaining = quotaRemainingHeader === null
-        ? null
-        : Number(quotaRemainingHeader);
       setResult({
         payload,
         provider: response.headers.get("X-ModelMux-Provider"),
         durationMs: Math.round(performance.now() - startedAt),
-        quotaRemaining: Number.isFinite(quotaRemaining) ? quotaRemaining : null,
       });
     } catch (runError) {
       if (runError instanceof Error && runError.name === "AbortError") return;
@@ -235,7 +220,6 @@ export function ContestantPlayground({
           <h2 id="playground-dialog-title">模型调用测试</h2>
         </div>
         <div className="playground-modal-actions">
-          <div className={`playground-quota-badge${access.quotaEnforced ? "" : " unlimited"}`}><Gauge />{access.quotaEnforced ? `成功调用扣 1 次 · 当前剩余 ${access.requestsRemaining.toLocaleString("zh-CN")}` : `比赛模式 · 调用不限量 · 已调用 ${access.requestsUsed.toLocaleString("zh-CN")} 次`}</div>
           <button ref={closeButtonRef} type="button" className="playground-modal-close" title="关闭" aria-label="关闭 Playground" disabled={running} onClick={onClose}><X /></button>
         </div>
       </header>
@@ -293,7 +277,7 @@ export function ContestantPlayground({
             </label>
 
             <div className={`playground-image-field ${supportsImage ? "" : "disabled"}`}>
-              <div><span>图片输入</span><small>{supportsImage ? "PNG / JPG / WebP · 最大 1 MB" : "当前模型仅支持文本"}</small></div>
+              <div><span>图片输入</span><small>{supportsImage ? "PNG / JPG / WebP" : "当前模型仅支持文本"}</small></div>
               <label className="playground-image-url">
                 <span>HTTPS URL</span>
                 <input
@@ -377,7 +361,6 @@ export function ContestantPlayground({
                 {result.provider && <span>{result.provider}</span>}
                 <span>{result.durationMs.toLocaleString("zh-CN")} ms</span>
                 {typeof result.payload.usage?.total_tokens === "number" && <span>{result.payload.usage.total_tokens.toLocaleString("zh-CN")} tokens</span>}
-                {result.quotaRemaining !== null && <span>剩余 {result.quotaRemaining.toLocaleString("zh-CN")} requests</span>}
               </div>
               {reasoning && (
                 <details className="playground-reasoning">

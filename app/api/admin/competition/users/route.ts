@@ -23,7 +23,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   if (admin instanceof NextResponse) return admin;
   try {
     return NextResponse.json(
-      { users: await listUsers(), apiBase: contestantApiBase(request) },
+      {
+        users: (await listUsers()).filter((user) => user.role === "contestant"),
+        apiBase: contestantApiBase(request),
+      },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {

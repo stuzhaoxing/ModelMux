@@ -1,0 +1,4 @@
+file '/Users/stuzhaoxing/Program/ModelMux/video/contestant/work/06/06-01.mp4'
+file '/Users/stuzhaoxing/Program/ModelMux/video/contestant/work/06/06-02.mp4'
+file '/Users/stuzhaoxing/Program/ModelMux/video/contestant/work/06/06-03.mp4'
+file '/Users/stuzhaoxing/Program/ModelMux/video/contestant/work/06/06-04.mp4'

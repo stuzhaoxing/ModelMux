@@ -4,7 +4,6 @@ import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import {
-  Activity,
   CheckCircle2,
   Radio,
   Users,
@@ -29,7 +28,6 @@ import styles from "./CompetitionScreen.module.css";
 
 const snapshotIntervalMs = 3_000;
 const progressHighlightMs = 1_800;
-const tokenMinuteBucketCount = 90;
 
 const stageLabels: Record<CompetitionScreenStage, string> = {
   setup: "等待题目发布",
@@ -86,10 +84,6 @@ function simulationCountdown(snapshot: CompetitionScreenSnapshot, now: number): 
   const elapsedSinceSnapshot = Math.max(0, now - Date.parse(snapshot.generatedAt));
   const acceleratedSeconds = Math.floor((elapsedSinceSnapshot * 60) / simulation.realMsPerMinute);
   return formatDuration(remainingAtSnapshot - acceleratedSeconds);
-}
-
-function formatTokenTotal(value: number): string {
-  return value.toLocaleString("zh-CN");
 }
 
 function progressPercent(contestant: CompetitionScreenContestant, questionTotal: number): number {
@@ -277,98 +271,10 @@ export default function CompetitionScreen({
             {[...recentProgressChanges.values()].map((change) => `${change.after.name} 答题进度更新`).join("，")}
           </div>
 
-          <TokenConsumptionChart
-            buckets={snapshot.tokenMinutes ?? Array<number>(tokenMinuteBucketCount).fill(0)}
-            totalTokens={snapshot.summary.totalTokens}
-          />
         </section>
       </section>
 
     </main>
-  );
-}
-
-function RollingTokenTotal({ value }: { value: number }) {
-  const [displayValue, setDisplayValue] = useState(value);
-  const currentValue = useRef(value);
-
-  useEffect(() => {
-    const from = currentValue.current;
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const duration = reducedMotion ? 0 : 900;
-    const startedAt = performance.now();
-    let frame = 0;
-
-    const update = (timestamp: number) => {
-      const progress = duration === 0 ? 1 : Math.min(1, (timestamp - startedAt) / duration);
-      const eased = 1 - (1 - progress) ** 3;
-      const nextValue = Math.round(from + (value - from) * eased);
-      currentValue.current = nextValue;
-      setDisplayValue(nextValue);
-      if (progress < 1) frame = window.requestAnimationFrame(update);
-    };
-
-    frame = window.requestAnimationFrame(update);
-    return () => window.cancelAnimationFrame(frame);
-  }, [value]);
-
-  return <strong aria-label={`${formatTokenTotal(value)} 词元`}>{formatTokenTotal(displayValue)}</strong>;
-}
-
-function TokenConsumptionChart({ buckets, totalTokens }: { buckets: number[]; totalTokens: number }) {
-  const chartWidth = 1200;
-  const chartHeight = 100;
-  const chartLeft = 10;
-  const chartRight = chartWidth - chartLeft;
-  const chartBottom = 94;
-  const chartTop = 8;
-  const maxValue = Math.max(1, ...buckets);
-  const slotWidth = (chartRight - chartLeft) / Math.max(1, buckets.length);
-  const barWidth = Math.max(6, slotWidth * .58);
-
-  return (
-    <figure className={styles.tokenFlowPanel} data-active={totalTokens > 0}>
-      <Image
-        alt=""
-        aria-hidden
-        className={styles.tokenFlowScenery}
-        height={340}
-        loading="eager"
-        sizes="100vw"
-        src="/screen/competition-eco-strip.webp"
-        width={1672}
-      />
-      <figcaption className={styles.tokenFlowHeader}>
-        <span className={styles.tokenFlowTitle}><Activity /><strong>实时AI算力消耗统计</strong></span>
-        <span className={styles.tokenFlowTotal}>
-          <RollingTokenTotal value={totalTokens} />
-          <small>词元</small>
-        </span>
-      </figcaption>
-      <div className={styles.tokenFlowChart}>
-        <svg aria-label={`本场共消耗 ${totalTokens} 词元`} preserveAspectRatio="none" role="img" viewBox={`0 0 ${chartWidth} ${chartHeight}`}>
-          <defs>
-            <linearGradient id="token-minute-fill" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0" stopColor="#7cf0d0" stopOpacity=".95" />
-              <stop offset="1" stopColor="#3ec8ff" stopOpacity=".28" />
-            </linearGradient>
-          </defs>
-          <g className={styles.tokenFlowGrid}>
-            <path d="M0 30H1200M0 60H1200M0 90H1200" />
-            <path d="M200 0V100M400 0V100M600 0V100M800 0V100M1000 0V100" />
-          </g>
-          {buckets.map((value, index) => {
-            const scale = Math.max(.025, value / maxValue);
-            const x = chartLeft + index * slotWidth + (slotWidth - barWidth) / 2;
-            const style = {
-              "--token-bar-delay": `${index * 4}ms`,
-              "--token-bar-scale": scale,
-            } as CSSProperties;
-            return <rect className={styles.tokenMinuteBar} height={chartBottom - chartTop} key={index} rx="2" style={style} width={barWidth} x={x} y={chartTop} />;
-          })}
-        </svg>
-      </div>
-    </figure>
   );
 }
 
@@ -391,7 +297,6 @@ function ContestantSeat({ contestant, index, questionTotal, recentlyUpdated }: {
   const showDuration = contestant.durationSeconds !== null && contestant.durationKind !== null;
   return (
     <article className={styles.contestantSeat} data-contestant-id={contestant.id} data-recently-updated={recentlyUpdated} data-status={contestant.status}>
-      <span className={styles.visuallyHidden}>{contestant.name} 累计消耗 {contestant.totalTokens.toLocaleString("zh-CN")} 词元</span>
       <div className={styles.seatIdentity}>
         <ContestantRank rank={index} />
         <strong title={contestant.name}>{contestant.name}</strong>

@@ -14,6 +14,7 @@ import {
   Save,
   Send,
   TimerReset,
+  TriangleAlert,
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -462,6 +463,18 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
         <section className="contestant-main">
           {selectedQuestion ? (
             <>
+              <aside className="exam-material-notice" role="note" aria-labelledby="exam-material-notice-title">
+                <TriangleAlert aria-hidden="true" />
+                <div>
+                  <strong id="exam-material-notice-title">特别提示</strong>
+                  <ol>
+                    <li>本考试所提供材料中涉及弄虚作假的案例，均为本次考核需要而人工编撰的虚构素材，不反映任何真实情况。</li>
+                    <li>本材料仅限本次考试内部使用，严禁复制、传播或挪作他用，违者将追究相应责任。</li>
+                    <li>质量核查范围仅以所提供的材料为依据，对于材料之外的内容（如监测指标是否在CMA能力项范围内、人员是否持证上岗、仪器是否检定校准等）默认视为完整且正确无误，无需核查。</li>
+                  </ol>
+                </div>
+              </aside>
+
               <article className="question-paper">
                 <header>
                   <div><span>考核题目 · {selectedQuestion.status === "published" ? "答题中" : "已关闭"}</span><h1>{selectedQuestion.title}</h1></div>

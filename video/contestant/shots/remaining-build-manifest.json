@@ -1,0 +1,72 @@
+{
+  "generatedAt": "2026-08-27T08:34:15.278Z",
+  "mergedVideoCreated": false,
+  "shots": [
+    {
+      "shot": "02",
+      "title": "赛前设备与离线环境准备",
+      "durationSeconds": 33.02,
+      "video": "02-赛前设备与离线环境准备.mp4"
+    },
+    {
+      "shot": "03",
+      "title": "登录并获取模型接入信息",
+      "durationSeconds": 29.151,
+      "video": "03-登录并获取模型接入信息.mp4"
+    },
+    {
+      "shot": "04",
+      "title": "配置本地知识库模型服务",
+      "durationSeconds": 33.056,
+      "video": "04-配置本地知识库模型服务.mp4"
+    },
+    {
+      "shot": "05",
+      "title": "验证本地知识库正常运行",
+      "durationSeconds": 23.33,
+      "video": "05-验证本地知识库正常运行.mp4"
+    },
+    {
+      "shot": "06",
+      "title": "测试答题环境操作",
+      "durationSeconds": 29.209,
+      "video": "06-测试答题环境操作.mp4"
+    },
+    {
+      "shot": "07",
+      "title": "正式比赛登录与纪律",
+      "durationSeconds": 42.288,
+      "video": "07-正式比赛登录与纪律.mp4"
+    },
+    {
+      "shot": "08",
+      "title": "阅读题目与确定作答范围",
+      "durationSeconds": 14.538,
+      "video": "08-阅读题目与确定作答范围.mp4"
+    },
+    {
+      "shot": "09",
+      "title": "检索分析与人工核验",
+      "durationSeconds": 23.522,
+      "video": "09-检索分析与人工核验.mp4"
+    },
+    {
+      "shot": "10",
+      "title": "编辑答案与保存恢复",
+      "durationSeconds": 37.471,
+      "video": "10-编辑答案与保存恢复.mp4"
+    },
+    {
+      "shot": "11",
+      "title": "最终检查与逐题提交",
+      "durationSeconds": 24.49,
+      "video": "11-最终检查与逐题提交.mp4"
+    },
+    {
+      "shot": "12",
+      "title": "异常报告与关键要求回顾",
+      "durationSeconds": 43.143,
+      "video": "12-异常报告与关键要求回顾.mp4"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "generatedAt": "2026-08-27T08:32:01.154Z",
+  "shot": "11",
+  "title": "最终检查与逐题提交",
+  "voice": "Tingting",
+  "voiceRate": 165,
+  "durationSeconds": 24.49,
+  "video": "11-最终检查与逐题提交.mp4",
+  "subtitles": "11-最终检查与逐题提交.srt",
+  "scenes": [
+    {
+      "scene": 1,
+      "frame": "18-check",
+      "speechDurationSeconds": 7.783,
+      "durationSeconds": 8.333
+    },
+    {
+      "scene": 2,
+      "frame": "18-confirm",
+      "speechDurationSeconds": 7.205,
+      "durationSeconds": 7.755
+    },
+    {
+      "scene": 3,
+      "frame": "18-lock",
+      "speechDurationSeconds": 7.852,
+      "durationSeconds": 8.402
+    }
+  ]
+}

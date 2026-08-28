@@ -1,0 +1,24 @@
+{
+  "generatedAt": "2026-08-27T08:28:23.157Z",
+  "shot": "08",
+  "title": "阅读题目与确定作答范围",
+  "voice": "Tingting",
+  "voiceRate": 165,
+  "durationSeconds": 14.538,
+  "video": "08-阅读题目与确定作答范围.mp4",
+  "subtitles": "08-阅读题目与确定作答范围.srt",
+  "scenes": [
+    {
+      "scene": 1,
+      "frame": "14-question",
+      "speechDurationSeconds": 6.607,
+      "durationSeconds": 7.157
+    },
+    {
+      "scene": 2,
+      "frame": "14-boundary",
+      "speechDurationSeconds": 6.831,
+      "durationSeconds": 7.381
+    }
+  ]
+}

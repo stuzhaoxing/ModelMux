@@ -11,13 +11,17 @@ export async function apiRequest<T>(url: string, init?: RequestInit): Promise<T>
   ) {
     window.dispatchEvent(new Event("modelmux-admin-unauthorized"));
   }
-  // 选手/评委端的会话是在服务端组件里校验的，页面打开后才过期的话只有接口会 401，
-  // 这时直接退回统一登录页，并记住当前路径以便登录后跳回来。
+  // 考务接口虽然沿用 /api/competition/ 路径，但已经由 admin 会话承载。
+  // admin 页面里的 401 交给后台壳统一退出，其余才回选手登录页。
   if (
     response.status === 401 &&
     url.startsWith("/api/competition/") &&
     typeof window !== "undefined"
   ) {
+    if (window.location.pathname.startsWith("/admin")) {
+      window.dispatchEvent(new Event("modelmux-admin-unauthorized"));
+      throw new Error(payload.error || "管理员登录状态已失效");
+    }
     const next = `${window.location.pathname}${window.location.search}`;
     window.location.replace(`/login?next=${encodeURIComponent(next)}`);
   }

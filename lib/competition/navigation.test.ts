@@ -45,12 +45,12 @@ describe("competition portal navigation", () => {
   });
 
   it("sends each role to its own home after login", () => {
-    expect(roleHomeRoutes.judge).toBe("/judge/dashboard");
+    expect(roleHomeRoutes.judge).toBe("/admin/competition");
     expect(roleHomeRoutes.contestant).toBe("/contestant/questions");
-    expect(loginRedirectTarget("judge", null)).toBe("/judge/dashboard");
+    expect(loginRedirectTarget("judge", null)).toBe("/admin/competition");
     expect(loginRedirectTarget("contestant", undefined)).toBe("/contestant/questions");
     expect(loginRedirectTarget("contestant", "/contestant/api-docs")).toBe("/contestant/api-docs");
-    expect(loginRedirectTarget("judge", "/judge/answers?q=2")).toBe("/judge/answers?q=2");
+    expect(loginRedirectTarget("judge", "/judge/answers?q=2")).toBe("/admin/competition");
   });
 
   it("refuses a next target that leaves the site or the role", () => {
@@ -58,7 +58,7 @@ describe("competition portal navigation", () => {
     expect(loginRedirectTarget("contestant", "//evil.example/x")).toBe("/contestant/questions");
     expect(loginRedirectTarget("contestant", "/\\evil.example")).toBe("/contestant/questions");
     expect(loginRedirectTarget("contestant", "/judge/answers")).toBe("/contestant/questions");
-    expect(loginRedirectTarget("judge", "/admin")).toBe("/judge/dashboard");
-    expect(loginRedirectTarget("judge", "/contestant/questions")).toBe("/judge/dashboard");
+    expect(loginRedirectTarget("judge", "/admin")).toBe("/admin/competition");
+    expect(loginRedirectTarget("judge", "/contestant/questions")).toBe("/admin/competition");
   });
 });

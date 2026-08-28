@@ -10,8 +10,8 @@ export interface OperationModeState {
 
 const stateFileName = "gateway-operation-mode.json";
 
-// 测试模式是最保守的默认值：额度照常扣减。状态文件丢失或损坏时，
-// 公网测试实例不会因此变成"不限量"，只会退回到有限额度。
+// 测试模式是最保守的展示默认值。状态文件丢失或损坏时，
+// 大屏回到演练状态，模型 API 转发行为不受模式影响。
 const defaultState: OperationModeState = {
   mode: "test",
   updatedAt: null,
@@ -46,9 +46,4 @@ export async function setOperationMode(
   const updatedAt = now.toISOString();
   await writeStateFile(stateFileName, { mode, updatedAt });
   return { mode, updatedAt, stateFileValid: true };
-}
-
-// 比赛模式只解除总额度上限，每分钟频率限制在两种模式下都保留。
-export function quotaEnforced(mode: OperationMode): boolean {
-  return mode === "test";
 }

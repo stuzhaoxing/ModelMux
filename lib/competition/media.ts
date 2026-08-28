@@ -22,7 +22,7 @@ const allowedImageTypes = new Map([
 export type MediaKind = "image" | "file";
 
 interface AttachmentRow extends RowDataPacket {
-  uploader_id: number;
+  uploader_id: number | null;
   uploader_role: CompetitionRole;
   purpose: "question" | "answer";
   kind: MediaKind;
@@ -217,7 +217,7 @@ export async function discardMediaUpload(upload: PendingMediaUpload): Promise<vo
 
 export async function registerMediaUpload(input: {
   upload: PendingMediaUpload;
-  uploaderId: number;
+  uploaderId: number | null;
   uploaderRole: CompetitionRole;
 }): Promise<{
   id: number;
@@ -265,7 +265,7 @@ export async function readMedia(id: number): Promise<{
   originalName: string;
   byteSize: string;
   kind: MediaKind;
-  uploaderId: number;
+  uploaderId: number | null;
   uploaderRole: CompetitionRole;
   purpose: "question" | "answer";
 } | null> {
@@ -288,7 +288,7 @@ export async function readMedia(id: number): Promise<{
       originalName: record.original_name,
       byteSize: String(record.byte_size),
       kind: record.kind,
-      uploaderId: Number(record.uploader_id),
+      uploaderId: record.uploader_id === null ? null : Number(record.uploader_id),
       uploaderRole: record.uploader_role,
       purpose: record.purpose,
     };
@@ -301,7 +301,7 @@ export async function readMedia(id: number): Promise<{
 export async function contestantCanReadMedia(
   mediaId: number,
   contestantId: number,
-  media: { uploaderId: number; uploaderRole: CompetitionRole; purpose: "question" | "answer" },
+  media: { uploaderId: number | null; uploaderRole: CompetitionRole; purpose: "question" | "answer" },
 ): Promise<boolean> {
   if (media.uploaderRole === "contestant") return media.uploaderId === contestantId;
   if (media.purpose !== "question") return false;

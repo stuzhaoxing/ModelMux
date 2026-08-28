@@ -1,7 +1,7 @@
 # 公网调试实例的 nginx 反向代理参考示例，安装到
 # /etc/nginx/conf.d/modelmux.conf（或 sites-available 再软链）。
 # 应用本身监听 127.0.0.1:4000（.env.local 里的 HOSTNAME/PORT），
-# TLS、限流和大小限制都在这一层做。
+# TLS 在这一层终止，模型请求不附加频率或大小限制。
 
 server {
     listen 80;
@@ -19,8 +19,8 @@ server {
     ssl_certificate     /etc/nginx/ssl/debug.example.com.crt;
     ssl_certificate_key /etc/nginx/ssl/debug.example.com.key;
 
-    # 题目和答案附件没有应用层固定大小上限。0 表示 nginx 也不限制，
-    # 实际容量由数据盘和文件系统决定；模型请求体仍有自己的 2 MiB 兜底。
+    # 题目、答案附件和模型请求都没有应用层固定大小上限。
+    # 0 表示 nginx 也不限制，实际容量由数据盘和文件系统决定。
     client_max_body_size 0;
 
     location / {

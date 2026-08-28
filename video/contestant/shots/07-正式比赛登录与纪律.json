@@ -1,0 +1,36 @@
+{
+  "generatedAt": "2026-08-27T08:28:14.825Z",
+  "shot": "07",
+  "title": "正式比赛登录与纪律",
+  "voice": "Tingting",
+  "voiceRate": 165,
+  "durationSeconds": 42.288,
+  "video": "07-正式比赛登录与纪律.mp4",
+  "subtitles": "07-正式比赛登录与纪律.srt",
+  "scenes": [
+    {
+      "scene": 1,
+      "frame": "12-network",
+      "speechDurationSeconds": 9.38,
+      "durationSeconds": 9.93
+    },
+    {
+      "scene": 2,
+      "frame": "12-login",
+      "speechDurationSeconds": 7.85,
+      "durationSeconds": 8.4
+    },
+    {
+      "scene": 3,
+      "frame": "12-discipline",
+      "speechDurationSeconds": 12.445,
+      "durationSeconds": 12.995
+    },
+    {
+      "scene": 4,
+      "frame": "13-wait",
+      "speechDurationSeconds": 10.414,
+      "durationSeconds": 10.964
+    }
+  ]
+}

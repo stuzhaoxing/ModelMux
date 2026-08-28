@@ -1,0 +1,24 @@
+{
+  "generatedAt": "2026-08-27T08:17:09.932Z",
+  "shot": "02",
+  "title": "赛前设备与离线环境准备",
+  "voice": "Tingting",
+  "voiceRate": 165,
+  "durationSeconds": 33.02,
+  "video": "02-赛前设备与离线环境准备.mp4",
+  "subtitles": "02-赛前设备与离线环境准备.srt",
+  "scenes": [
+    {
+      "scene": 1,
+      "frame": "03-equipment",
+      "speechDurationSeconds": 14.747,
+      "durationSeconds": 15.297
+    },
+    {
+      "scene": 2,
+      "frame": "04-check",
+      "speechDurationSeconds": 17.173,
+      "durationSeconds": 17.723
+    }
+  ]
+}

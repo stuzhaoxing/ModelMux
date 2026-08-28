@@ -1,10 +1,7 @@
 import { z } from "zod";
 
-export const playgroundImageMaxBytes = 1024 * 1024;
-const playgroundImageDataUrlMaxLength = Math.ceil(playgroundImageMaxBytes * 4 / 3) + 128;
 const playgroundImageDataUrlSchema = z
   .string()
-  .max(playgroundImageDataUrlMaxLength)
   .regex(/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/);
 const playgroundRemoteImageUrlSchema = z
   .string()

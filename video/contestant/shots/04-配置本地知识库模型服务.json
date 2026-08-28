@@ -1,0 +1,24 @@
+{
+  "generatedAt": "2026-08-27T08:24:32.809Z",
+  "shot": "04",
+  "title": "配置本地知识库模型服务",
+  "voice": "Tingting",
+  "voiceRate": 165,
+  "durationSeconds": 33.056,
+  "video": "04-配置本地知识库模型服务.mp4",
+  "subtitles": "04-配置本地知识库模型服务.srt",
+  "scenes": [
+    {
+      "scene": 1,
+      "frame": "09-fields",
+      "speechDurationSeconds": 11.718,
+      "durationSeconds": 12.268
+    },
+    {
+      "scene": 2,
+      "frame": "08-security",
+      "speechDurationSeconds": 20.238,
+      "durationSeconds": 20.788
+    }
+  ]
+}

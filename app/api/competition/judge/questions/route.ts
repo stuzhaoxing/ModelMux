@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { recordActivity } from "@/lib/competition/activity";
 import { cleanRichText, richTextHasContent } from "@/lib/competition/content";
-import { competitionError, parseJson, requireRole, requireSameOrigin } from "@/lib/competition/http";
+import { competitionError, parseJson, requireJudgeOperator, requireSameOrigin } from "@/lib/competition/http";
 import { createQuestion, getCompetitionControl, getQuestion, listJudgeQuestions } from "@/lib/competition/repository";
 import { competitionCountdownMinutes } from "@/lib/competition/screen-model";
 
@@ -17,7 +17,7 @@ const questionSchema = z.object({
 });
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const user = await requireRole(request, "judge");
+  const user = requireJudgeOperator(request);
   if (user instanceof NextResponse) return user;
   try {
     const [questions, competition] = await Promise.all([
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const originError = requireSameOrigin(request);
   if (originError) return originError;
-  const user = await requireRole(request, "judge");
+  const user = requireJudgeOperator(request);
   if (user instanceof NextResponse) return user;
   try {
     const input = await parseJson(request, questionSchema);

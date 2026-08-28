@@ -5,10 +5,6 @@ import { competitionError, requireRole } from "@/lib/competition/http";
 import { contestantApiAccess } from "@/lib/competition/repository";
 import type { ContestantApiAccess } from "@/lib/competition/types";
 import { loadGatewayConfig } from "@/lib/gateway/config";
-import {
-  operationModeState,
-  quotaEnforced,
-} from "@/lib/gateway/operation-mode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,7 +23,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
 
     const config = loadGatewayConfig();
-    const modeState = await operationModeState();
     const configuredBase = config.deploymentMode === "local"
       ? config.internalBaseUrl
       : config.publicBaseUrl;
@@ -35,15 +30,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const payload: ContestantApiAccess = {
       apiBase: `${origin}/v1`,
       apiKey: access.apiKey,
-      requestQuota: access.requestQuota,
-      requestsUsed: access.requestsUsed,
-      requestsRemaining: Math.max(
-        0,
-        access.requestQuota - access.requestsUsed,
-      ),
-      operationMode: modeState.mode,
-      quotaEnforced: quotaEnforced(modeState.mode),
-      rateLimitRpm: config.rateLimitRpm,
       models: config.models.map((model) => ({
         id: model.alias,
         name: model.displayName,

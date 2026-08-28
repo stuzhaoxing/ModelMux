@@ -9,14 +9,11 @@ import {
   Check,
   CircleHelp,
   Copy,
-  Gauge,
-  Infinity as InfinityIcon,
   KeyRound,
   Link2,
   LoaderCircle,
   ScanEye,
   RefreshCw,
-  Server,
   Terminal,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -178,10 +175,6 @@ export function ContestantApiDocs() {
 
   if (!access) return null;
 
-  const usedPercent = access.requestQuota > 0
-    ? Math.min(100, (access.requestsUsed / access.requestQuota) * 100)
-    : 100;
-  const quotaEnforced = access.quotaEnforced;
   const visibleModels = access.models;
   const hasVisionModels = visionModels.length > 0;
   const visionModelNames = visionModels.map((model) => model.name).join("、");
@@ -196,7 +189,7 @@ export function ContestantApiDocs() {
           <p>使用选手 API Key 通过 OpenAI 兼容接口调用竞赛模型白名单内的模型。</p>
         </div>
         <button type="button" className="secondary-action" disabled={loading} onClick={() => void loadAccess()}>
-          <RefreshCw className={loading ? "spinning" : ""} />刷新额度
+          <RefreshCw className={loading ? "spinning" : ""} />刷新信息
         </button>
       </header>
 
@@ -210,18 +203,6 @@ export function ContestantApiDocs() {
         <div className="api-credential-field api-key-field">
           <span><KeyRound />API KEY</span>
           <div><code>{access.apiKey}</code><CopyButton target="key" copied={copied} label="复制 API Key" onCopy={() => void copyText("key", access.apiKey)} /></div>
-        </div>
-        <div className={`api-quota-summary${quotaEnforced ? "" : " unlimited"}`}>
-          <span>{quotaEnforced ? <Gauge /> : <InfinityIcon />}REQUEST QUOTA</span>
-          <strong>{quotaEnforced ? access.requestsRemaining.toLocaleString("zh-CN") : "不限量"}</strong>
-          <small>
-            {quotaEnforced
-              ? `剩余 / 共 ${access.requestQuota.toLocaleString("zh-CN")} 次`
-              : `比赛模式 · 已调用 ${access.requestsUsed.toLocaleString("zh-CN")} 次`}
-          </small>
-          {quotaEnforced
-            ? <div className="quota-track" aria-label={`已使用 ${access.requestsUsed} 次`}><i style={{ width: `${usedPercent}%` }} /></div>
-            : <div className="quota-track unlimited" aria-label="比赛模式不限量"><i /></div>}
         </div>
         <div className="api-access-models" aria-label={`可用模型，共 ${visibleModels.length} 个`}>
           <div className="api-access-models-heading">
@@ -337,12 +318,10 @@ export function ContestantApiDocs() {
           )}
 
           <section className="api-doc-section">
-            <header><span>{hasVisionModels ? "04" : "03"}</span><div><h2>错误码</h2><p>{quotaEnforced ? "失败请求不会扣减总请求额度。" : "比赛模式不限总额度，失败请求也不会计入调用次数。"}</p></div></header>
+            <header><span>{hasVisionModels ? "04" : "03"}</span><div><h2>错误码</h2><p>上游响应由网关原样返回。</p></div></header>
             <div className="api-error-table">
               <div><code>invalid_api_key</code><span>API Key 缺失、错误或账号已停用</span><b>401</b></div>
               <div><code>model_not_allowed</code><span>模型不在竞赛允许列表中</span><b>400</b></div>
-              <div><code>rate_limit_exceeded</code><span>超过每分钟请求频率</span><b>429</b></div>
-              <div><code>quota_exceeded</code><span>{quotaEnforced ? "账号总请求额度已用完" : "比赛模式下不会出现"}</span><b>429</b></div>
               <div><code>service_suspended</code><span>管理员已暂停模型服务</span><b>503</b></div>
             </div>
           </section>
@@ -350,16 +329,8 @@ export function ContestantApiDocs() {
 
         <aside className="api-docs-sidebar">
           <section>
-            <span className="api-sidebar-label"><Server />调用限制</span>
-            <dl>
-              <div><dt>每分钟频率</dt><dd>{access.rateLimitRpm} 次</dd></div>
-              <div><dt>已调用</dt><dd>{access.requestsUsed.toLocaleString("zh-CN")} 次</dd></div>
-              <div><dt>剩余额度</dt><dd>{quotaEnforced ? `${access.requestsRemaining.toLocaleString("zh-CN")} 次` : "不限量"}</dd></div>
-            </dl>
-          </section>
-          <section>
             <span className="api-sidebar-label"><Braces />规范与凭证</span>
-            <p className="api-protocol-scope">模型 API 统一使用 OpenAI Chat Completions 兼容规范和 Bearer 凭证。{quotaEnforced ? "" : "比赛模式解除的只是总额度，每分钟频率限制依然有效。"}</p>
+            <p className="api-protocol-scope">模型 API 统一使用 OpenAI Chat Completions 兼容规范和 Bearer 凭证。</p>
           </section>
           <div className="api-security-note"><KeyRound /><p><strong>凭证仅限本人使用</strong><span>不要将 API Key 写入公开代码仓库或发给其他选手。</span></p></div>
         </aside>
@@ -376,7 +347,6 @@ export function ContestantApiDocs() {
         <ContestantPlayground
           access={access}
           onClose={closePlayground}
-          onRequestComplete={loadAccess}
         />
       )}
     </>

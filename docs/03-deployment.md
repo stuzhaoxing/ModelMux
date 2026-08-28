@@ -43,9 +43,7 @@ MODELMUX_ADMIN_SESSION_SECRET=<openssl-rand-hex-32>
 MODELMUX_DATABASE_URL=mysql://modelmux:<database-password>@127.0.0.1:3306/modelmux
 MODELMUX_DATA_DIR=/opt/modelmux/data
 MODELMUX_CLIENT_KEYS=<client-key-1>,<client-key-2>
-MODELMUX_ALLOW_ANONYMOUS=false
-MODELMUX_RATE_LIMIT_RPM=60
-# nginx 覆写了转发头，限流才能按真实来源 IP 计数
+# 登录失败保护按真实来源 IP 计数
 MODELMUX_TRUST_PROXY=true
 DEEPSEEK_API_KEYS=<provider-key-1>
 DASHSCOPE_API_KEYS=<provider-key-1>
@@ -159,14 +157,13 @@ MODELMUX_DATA_DIR=/opt/modelmux/data
 MODELMUX_EXPORT_FONT_PATH=/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.otf
 # 仅当上面配置的是 TTC 字体集合时填写，例如 NotoSerifCJKsc-Regular
 MODELMUX_EXPORT_FONT_FAMILY=
-# Dashboard 默认比赛时长，评委开始比赛时可修改，单位分钟
+# 考务工作台默认比赛时长，管理员开始比赛时可修改，单位分钟
 MODELMUX_COMPETITION_DURATION_MINUTES=90
 MODELMUX_CLIENT_KEYS=<competition-client-key>
 DASHSCOPE_API_KEYS=<provider-key-1>
 SILICONFLOW_API_KEYS=<provider-key-1>,<provider-key-2>
 # 可选；配置后开放 doubao-seed-2-0-pro-260215
 ARK_API_KEYS=<provider-key-1>
-MODELMUX_ALLOW_ANONYMOUS=false
 HOSTNAME=10.20.0.1
 PORT=4000
 # 非 Homebrew 默认路径时显式设置，例如 /usr/local/bin/node
@@ -189,7 +186,7 @@ sudo chmod 600 /opt/modelmux/.env.local
 磁盘和文件系统决定。比赛前应确认数据盘空间并纳入备份；Nginx 必须同时使用
 `client_max_body_size 0` 和 `proxy_request_buffering off`，否则代理仍会限制或完整缓冲大附件。
 
-评委端“导出全部答卷”会为每个启用选手、每道已发布或已关闭题目生成一份 `.docx` 和一份 `.pdf`，再以 ZIP 流式下载。Word 中文使用宋体（SimSun），西文使用 Times New Roman。PDF 需要可被 `fontkit` 识别的 CJK TTF/OTF/TTC；生产 Linux 建议安装 `fonts-noto-cjk` 并将 `MODELMUX_EXPORT_FONT_PATH` 指向 `NotoSerifCJK-Regular.otf` 等宋体类字体。使用 TTC 字体集合时还需通过 `MODELMUX_EXPORT_FONT_FAMILY` 指定其中的简体中文字体，避免选中错误字形或导出失败。导出临时文件写入数据目录，下载连接关闭后自动清理。
+admin 考务工作台的“导出全部答卷”会为每个启用选手、每道已发布或已关闭题目生成一份 `.docx` 和一份 `.pdf`，再以 ZIP 流式下载。Word 中文使用宋体（SimSun），西文使用 Times New Roman。PDF 需要可被 `fontkit` 识别的 CJK TTF/OTF/TTC；生产 Linux 建议安装 `fonts-noto-cjk` 并将 `MODELMUX_EXPORT_FONT_PATH` 指向 `NotoSerifCJK-Regular.otf` 等宋体类字体。使用 TTC 字体集合时还需通过 `MODELMUX_EXPORT_FONT_FAMILY` 指定其中的简体中文字体，避免选中错误字形或导出失败。导出临时文件写入数据目录，下载连接关闭后自动清理。
 
 安装 `launchd` 服务：
 
@@ -210,7 +207,7 @@ curl http://10.20.0.1:4000/v1/models \
   -H 'Authorization: Bearer <competition-client-key>'
 ```
 
-投屏电脑打开 `http://10.20.0.1:4000/screen` 后，输入与 `MODELMUX_ADMIN_PASSWORD` 相同的单密码。系统签发独立的大屏只读会话，不会授予管理员后台权限；大屏快照接口也验证该会话，不能绕过页面直接读取。页面显示姓名、答题状态、模型调用次数与 Token 累计值，不包含登录账号、答案正文、密码或 API Key。选手区域会自动调整行列，确保全部选手始终同屏展示。
+投屏电脑打开 `http://10.20.0.1:4000/screen` 后，输入与 `MODELMUX_ADMIN_PASSWORD` 相同的单密码。系统签发独立的大屏只读会话，不会授予管理员后台权限；大屏快照接口也验证该会话，不能绕过页面直接读取。页面显示姓名和答题状态，不包含登录账号、答案正文、密码或 API Key。选手区域会自动调整行列，确保全部选手始终同屏展示。
 
 ## 4. 流式响应代理
 
@@ -219,7 +216,7 @@ curl http://10.20.0.1:4000/v1/models \
 | 路径 | 长连接类型 |
 | --- | --- |
 | `/v1/chat/completions` | 模型 SSE 流式响应 |
-| `/api/competition/events` | 考核系统的实时通道，评委发题和模式切换靠它推送 |
+| `/api/competition/events` | 考核系统的实时通道，管理员发题和模式切换靠它推送 |
 
 ```nginx
 proxy_buffering off;
@@ -236,24 +233,24 @@ gzip off;
 ## 5. 验收清单
 
 - 管理控制台只需要独立管理密码。
-- `/` 跳转到选手答题页 `/contestant/questions`，API 文档位于 `/contestant/api-docs`（Playground 是这个页面里的弹窗，旧地址 `/contestant/playground` 会跳转过来），管理员控制台位于 `/admin`，评委工作台位于 `/judge/questions`，评委和选手的登录页统一为 `/login`。
+- `/` 跳转到选手答题页 `/contestant/questions`，API 文档位于 `/contestant/api-docs`（Playground 是这个页面里的弹窗，旧地址 `/contestant/playground` 会跳转过来）。管理员登录入口是 `/admin/login`；登录后从 `/admin/competition` 进入考务总览，`/admin/questions` 管理题目，`/admin/answers` 查看答卷。旧 `/judge/*` 链接会永久重定向到对应 admin 页面。
 - 管理员总览显示内网和外网入站端口；没有公网入站服务时外网端口显示“未开放”。
 - 未登录请求 `/api/admin/status` 和 `/api/admin/competition/users` 均返回 `401`。
-- 管理员可创建评委和选手账号。评委和选手共用 `modelmux_competition_session`，同一个浏览器同一时刻只能保持其中一个身份，后登录的会顶掉先登录的；要同时开两端需用两个浏览器或无痕窗口。管理员会话和大屏只读会话彼此独立，可与任一端并存。
-- 评委在 Dashboard 填写时长并开始比赛后，已登录选手无需刷新即可同时收到整套题目，大屏倒计时同步开始；停止或自然到时后，选手端隐藏题目并禁止继续保存、提交，历史答案保留。
-- 比赛未运行时，评委可在 `/judge/answers` 删除题目；该题已有草稿和已提交答卷会随题目一并永久删除，进行中的比赛拒绝删除请求。
-- 选手草稿、最终提交和相应时间可在评委端查看；最终提交后不能修改。
-- 评委可在题目中、选手可在答卷中上传任意类型附件；文件实际写入 `MODELMUX_DATA_DIR/uploads`，重启服务后仍可下载。
-- 评委在答题进度页点击“导出全部答卷”可下载按选手分目录的 ZIP；每道题同时包含 Word/PDF，未开始作答的选手也会生成“尚未开始作答”文件。
+- 管理员只创建选手账号。考务能力直接使用 `modelmux_admin_session`，不再创建或登录评委账号；已有评委账号与历史记录保留，但旧评委会话会自动撤销。选手继续使用独立的 `modelmux_competition_session`，因此同一浏览器可同时保持 admin 与选手登录。
+- 管理员在考务总览填写时长并开始比赛后，已登录选手无需刷新即可同时收到整套题目，大屏倒计时同步开始；停止或自然到时后，选手端隐藏题目并禁止继续保存、提交，历史答案保留。
+- 比赛未运行时，管理员可在 `/admin/answers` 删除题目；该题已有草稿和已提交答卷会随题目一并永久删除，进行中的比赛拒绝删除请求。
+- 选手草稿、最终提交和相应时间可在 admin 考务工作台查看；最终提交后不能修改。
+- 管理员可在题目中、选手可在答卷中上传任意类型附件；文件实际写入 `MODELMUX_DATA_DIR/uploads`，重启服务后仍可下载。
+- 管理员在答题进度页点击“导出全部答卷”可下载按选手分目录的 ZIP；每道题同时包含 Word/PDF，未开始作答的选手也会生成“尚未开始作答”文件。
 - 系统设置关闭模型 API 后，OpenAI 兼容模型端点返回 `503 service_suspended`，管理员后台仍可访问。
 - 停服后重启服务，模型 API 仍保持停止；从系统设置重新开启后恢复调用。
 - 停掉 MySQL 后 `/health` 返回 `503`，`status` 为 `degraded`，`database.reachable` 为 `false`；恢复 MySQL 后重新返回 `200`。
 - 选手在答题框输入后不保存直接刷新页面，页面顶部出现"本机存有一份未保存的答案"横幅，点"恢复"回到刷新前的内容，点"丢弃"或直接继续输入都按丢弃处理。
-- 重启服务后，选手端和评委端的在线状态在十几秒内自行恢复，不需要手动刷新页面。
+- 重启服务后，选手端和 admin 考务工作台的在线状态在十几秒内自行恢复，不需要手动刷新页面。
 - 无选手 Key 的 `/v1/models` 返回 `401`。
-- 选手 Key 通过 OpenAI 兼容接口调用白名单模型，成功请求计入同一总额度。
+- 选手 Key 通过 OpenAI 兼容接口调用白名单模型，网关不设置账号额度或调用频率限制。
 - 非白名单模型返回 `400 model_not_allowed`。
-- 登录选手可从 API 文档页的 Playground 完成文本和 Qwen 图片理解调用。Playground 用的就是选手自己的 API Key 打同一个网关端点，所以每次成功调用 `api_requests_used` 都 +1（上游失败会退回），测试模式下同时扣减剩余额度；频率超限仍返回 `429 rate_limit_exceeded`。
+- 登录选手可从 API 文档页的 Playground 完成文本和 Qwen 图片理解调用。Playground 用选手自己的 API Key 调同一个网关端点，网关不附加额度、RPM 或请求体大小限制。
 - 普通和 `stream: true` 请求都能完整返回。
 - 供应商主路由失败时，在响应开始前切换到备用路由。
 - 赛中地址从每台选手终端可达。

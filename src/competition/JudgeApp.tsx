@@ -15,28 +15,26 @@ import {
   Trash2,
   UsersRound,
 } from "lucide-react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  judgeViewFromPath,
-  judgeViewRoutes,
-  type JudgeView,
-} from "@/lib/competition/navigation";
+  adminJudgeViewFromPathname,
+  adminJudgeViewPaths,
+  type AdminJudgeView,
+} from "@/lib/admin/navigation";
 import { eventStreamRetryDelayMs } from "@/lib/competition/event-stream";
-import type { ActivityEntry, CompetitionControl, CompetitionQuestion, JudgeAnswerRow, JudgeQuestion, SessionUser } from "@/lib/competition/types";
+import type { ActivityEntry, CompetitionControl, CompetitionQuestion, JudgeAnswerRow, JudgeQuestion } from "@/lib/competition/types";
 import type { OperationMode } from "@/lib/gateway/operation-mode";
 import { apiRequest, formatCompetitionTime } from "./api";
 import { JudgeActivityLog } from "./JudgeActivityLog";
 import { JudgeDashboard } from "./JudgeDashboard";
 import { useOperationMode } from "./OperationModeBanner";
-import { PortalFrame } from "./PortalFrame";
 import { RichTextEditor } from "./RichTextEditor";
 
-export default function JudgeApp({ user }: { user: SessionUser }) {
+export default function JudgeApp() {
   const pathname = usePathname();
-  const router = useRouter();
-  const view = judgeViewFromPath(pathname);
+  const view = adminJudgeViewFromPathname(pathname);
   const initialViewRef = useRef(view);
   const editorVersionRef = useRef<number | null>(null);
   const answersRequestRef = useRef(0);
@@ -49,7 +47,7 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
   const [answers, setAnswers] = useState<JudgeAnswerRow[]>([]);
   const [selectedContestantId, setSelectedContestantId] = useState<number | null>(null);
   const [online, setOnline] = useState(false);
-  const { mode, setMode } = useOperationMode();
+  const { setMode } = useOperationMode();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -135,7 +133,7 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
           : workspace.questions[0];
         const first = requestedFirst ?? workspace.questions[0];
         if (initialViewRef.current === "answers" && !requestedFirst) {
-          window.history.replaceState(null, "", judgeViewRoutes.questions);
+          window.history.replaceState(null, "", adminJudgeViewPaths.questions);
         }
         setSelectedId(first?.id ?? "new");
         setTitle(first?.title ?? "");
@@ -288,8 +286,8 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
 
   async function startCompetition() {
     const durationMinutes = Number(durationInput);
-    if (!Number.isSafeInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 24 * 60) {
-      setError("比赛时长必须是 1 到 1440 分钟之间的整数");
+    if (!Number.isSafeInteger(durationMinutes) || durationMinutes < 1) {
+      setError("比赛时长必须是大于 0 的整数");
       return;
     }
     if (!window.confirm(`开始后，选手将立即看到全部题目并可以作答，本次比赛限时 ${durationMinutes} 分钟。确认开始？`)) return;
@@ -365,7 +363,7 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
         setContentHtml(nextQuestion.contentHtml);
         editorVersionRef.current = nextQuestion.version;
         if (nextQuestion.status === "draft") {
-          window.history.replaceState(null, "", judgeViewRoutes.questions);
+          window.history.replaceState(null, "", adminJudgeViewPaths.questions);
         } else {
           void loadAnswers(nextQuestion.id).catch((loadError) => {
             setError(loadError instanceof Error ? loadError.message : "下一题答卷读取失败");
@@ -376,7 +374,7 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
         setTitle("");
         setContentHtml("");
         editorVersionRef.current = null;
-        window.history.replaceState(null, "", judgeViewRoutes.dashboard);
+        window.history.replaceState(null, "", adminJudgeViewPaths.dashboard);
       }
       setNotice(`题目《${result.deleted.title}》已删除${result.deleted.answerCount > 0 ? `，同时删除 ${result.deleted.answerCount} 份答卷` : ""}`);
     } catch (deleteError) {
@@ -384,12 +382,6 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
     } finally {
       setSaving(false);
     }
-  }
-
-  async function logout() {
-    await apiRequest("/api/competition/auth/logout", { method: "POST" }).catch(() => undefined);
-    router.replace("/login");
-    router.refresh();
   }
 
   function selectQuestion(question: JudgeQuestion) {
@@ -401,8 +393,8 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
       null,
       "",
       question.status === "draft"
-        ? judgeViewRoutes.questions
-        : judgeViewRoutes.answers,
+        ? adminJudgeViewPaths.questions
+        : adminJudgeViewPaths.answers,
     );
     if (question.status !== "draft") {
       void loadAnswers(question.id).catch((loadError) => setError(loadError instanceof Error ? loadError.message : "答题进度读取失败"));
@@ -412,9 +404,9 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
     }
   }
 
-  function navigateView(nextView: JudgeView) {
+  function navigateView(nextView: AdminJudgeView) {
     if (nextView === view) return;
-    window.history.pushState(null, "", judgeViewRoutes[nextView]);
+    window.history.pushState(null, "", adminJudgeViewPaths[nextView]);
     if (nextView === "answers" && typeof selectedId === "number") {
       void loadAnswers(selectedId).catch((loadError) => setError(loadError instanceof Error ? loadError.message : "答题进度读取失败"));
     }
@@ -431,12 +423,11 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
     setSelectedContestantId(null);
     setSelectedId("new");
     editorVersionRef.current = null;
-    window.history.pushState(null, "", judgeViewRoutes.questions);
+    window.history.pushState(null, "", adminJudgeViewPaths.questions);
   }
 
   return (
-    <PortalFrame role="judge" user={user} online={online} mode={mode} onLogout={() => void logout()}>
-      <main className={`judge-workspace ${view === "dashboard" ? "dashboard-view" : ""} ${logCollapsed ? "log-collapsed" : ""}`}>
+    <main className={`judge-workspace admin-judge-workspace ${view === "dashboard" ? "dashboard-view" : ""} ${logCollapsed ? "log-collapsed" : ""}`}>
         <aside className="question-queue">
           <div className="queue-heading">
             <span><small>考核题目</small><strong>{questions.length} 道</strong></span>
@@ -554,8 +545,7 @@ export default function JudgeApp({ user }: { user: SessionUser }) {
           collapsed={logCollapsed}
           onToggleCollapsed={() => setLogCollapsed((current) => !current)}
         />
-      </main>
-    </PortalFrame>
+    </main>
   );
 }
 

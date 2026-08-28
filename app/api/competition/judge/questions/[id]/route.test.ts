@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const mocks = vi.hoisted(() => ({
-  requireRole: vi.fn(),
+  requireJudgeOperator: vi.fn(),
   requireSameOrigin: vi.fn(),
   deleteQuestionWhileStopped: vi.fn(),
   listJudgeQuestions: vi.fn(),
@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/competition/http", () => ({
-  requireRole: mocks.requireRole,
+  requireJudgeOperator: mocks.requireJudgeOperator,
   requireSameOrigin: mocks.requireSameOrigin,
   parseJson: vi.fn(),
   competitionError: (error: unknown) => Response.json({ error: String(error) }, { status: 500 }),
@@ -35,11 +35,11 @@ describe("judge question deletion", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requireSameOrigin.mockReturnValue(null);
-    mocks.requireRole.mockResolvedValue({
-      id: 8,
+    mocks.requireJudgeOperator.mockReturnValue({
+      id: null,
       role: "judge",
-      username: "judge08",
-      displayName: "评委八",
+      username: "admin",
+      displayName: "管理员",
     });
   });
 

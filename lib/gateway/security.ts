@@ -34,10 +34,6 @@ export async function authenticateClient(
   request: Request,
   config: GatewayConfig,
 ): Promise<ClientIdentity | null> {
-  if (config.allowAnonymous) {
-    return { id: "anonymous", label: "anonymous", contestantId: null, contestantName: null };
-  }
-
   const candidate = clientToken(request);
   if (!candidate) return null;
   const matched = config.clientKeys.find((key) => equalSecret(key, candidate));
@@ -59,7 +55,6 @@ export async function authenticateClient(
 
 export function clientAuthConfigured(config: GatewayConfig): boolean {
   return (
-    config.allowAnonymous ||
     config.clientKeys.length > 0 ||
     isCompetitionDatabaseConfigured()
   );

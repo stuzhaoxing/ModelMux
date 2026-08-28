@@ -95,6 +95,29 @@ describe("competition question set publishing", () => {
     expect(mocks.connection.rollback).toHaveBeenCalledOnce();
   });
 
+  it("creates an admin-authored question without a competition user", async () => {
+    mocks.connection.execute
+      .mockResolvedValueOnce([[]])
+      .mockResolvedValueOnce([{ insertId: 12 }]);
+
+    await expect(createQuestion({
+      authorId: null,
+      title: "管理员出题",
+      contentHtml: "<p>内容</p>",
+    })).resolves.toBe(12);
+
+    expect(mocks.connection.execute.mock.calls[1][1]).toEqual([
+      "管理员出题",
+      "<p>内容</p>",
+      null,
+    ]);
+    expect(mocks.insertCompetitionEvent).toHaveBeenCalledWith(
+      mocks.connection,
+      { type: "question-updated", questionId: 12 },
+    );
+    expect(mocks.connection.commit).toHaveBeenCalledOnce();
+  });
+
   it("deletes a question and its answers before the competition starts", async () => {
     mocks.connection.execute
       .mockResolvedValueOnce([[

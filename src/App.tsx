@@ -10,9 +10,9 @@ import {
   Clipboard,
   FileClock,
   FlaskConical,
+  Gavel,
   Gauge,
   Globe2,
-  Infinity as InfinityIcon,
   KeyRound,
   LogOut,
   Network,
@@ -21,9 +21,9 @@ import {
   Router,
   ServerCog,
   Settings,
-  ShieldCheck,
   Trophy,
   UserCog,
+  type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -33,6 +33,7 @@ import {
   adminViewFromPathname,
   adminViewPaths,
   type AdminViewId,
+  isAdminJudgeViewId,
 } from "@/lib/admin/navigation";
 import { SYSTEM_NAME } from "@/lib/branding";
 import type {
@@ -42,6 +43,7 @@ import type {
   RequestLog,
 } from "@/lib/gateway/types";
 import AdminAccounts from "@/src/competition/AdminAccounts";
+import JudgeApp from "@/src/competition/JudgeApp";
 
 interface AdminStatusResponse {
   gateway: GatewayStatus;
@@ -49,9 +51,20 @@ interface AdminStatusResponse {
   logs: RequestLog[];
 }
 
-const navItems = [
+const navItems: Array<{
+  id: AdminViewId;
+  label: string;
+  icon: LucideIcon;
+  activeViews?: AdminViewId[];
+}> = [
   { id: "overview" as const, label: "总览", icon: Gauge },
-  { id: "accounts" as const, label: "账号管理", icon: UserCog },
+  {
+    id: "competition",
+    label: "考务工作台",
+    icon: Gavel,
+    activeViews: ["competition", "questions", "answers"],
+  },
+  { id: "accounts" as const, label: "选手账号", icon: UserCog },
   { id: "models" as const, label: "模型路由", icon: Router },
   { id: "logs" as const, label: "调用日志", icon: FileClock },
   { id: "settings" as const, label: "系统设置", icon: Settings },
@@ -59,7 +72,10 @@ const navItems = [
 
 const viewTitles: Record<AdminViewId, string> = {
   overview: "网关总览",
-  accounts: "账号管理",
+  competition: "考务工作台",
+  questions: "题目管理",
+  answers: "答卷查看",
+  accounts: "选手账号",
   models: "模型路由",
   logs: "调用日志",
   settings: "系统设置",
@@ -79,17 +95,15 @@ type OperationMode = GatewayStatus["operationMode"];
 
 const operationModeCopy: Record<
   OperationMode,
-  { label: string; quota: string; summary: string }
+  { label: string; summary: string }
 > = {
   test: {
     label: "测试模式",
-    quota: "按账号限量",
-    summary: "选手总请求额度照常扣减，适合赛前联调和演练。",
+    summary: "用于赛前联调和现场演练。",
   },
   competition: {
     label: "比赛模式",
-    quota: "不限量",
-    summary: "解除选手总请求额度上限，每分钟频率限制仍然有效。",
+    summary: "用于正式比赛期间的现场状态展示。",
   },
 };
 
@@ -196,6 +210,7 @@ export default function App() {
   const state = gateway?.state ?? "needs_config";
   const mode = gateway?.deploymentMode ?? "local";
   const operationMode = gateway?.operationMode ?? "test";
+  const judgeViewActive = isAdminJudgeViewId(activeView);
 
   return (
     <div className="app-shell">
@@ -214,11 +229,12 @@ export default function App() {
         <nav className="primary-nav" aria-label="主导航">
           {navItems.map((item) => {
             const Icon = item.icon;
+            const active = item.activeViews?.includes(activeView) ?? activeView === item.id;
             return (
               <Link
-                aria-current={activeView === item.id ? "page" : undefined}
+                aria-current={active ? "page" : undefined}
                 aria-label={item.label}
-                className={activeView === item.id ? "nav-item active" : "nav-item"}
+                className={active ? "nav-item active" : "nav-item"}
                 href={adminViewPaths[item.id]}
                 key={item.id}
                 title={item.label}
@@ -278,7 +294,7 @@ export default function App() {
           </div>
         </header>
 
-        <div className="page-content">
+        <div className={`page-content ${judgeViewActive ? "judge-page-content" : ""}`}>
           {error && (
             <div className="error-banner" role="alert">
               <CircleAlert size={17} />
@@ -301,6 +317,7 @@ export default function App() {
                   startedTime={startedTime}
                 />
               )}
+              {judgeViewActive && <JudgeApp />}
               {activeView === "accounts" && <AdminAccounts />}
               {activeView === "models" && <ModelsView gateway={gateway} />}
               {activeView === "logs" && <LogsView logs={status.logs} />}
@@ -433,7 +450,7 @@ function Overview({
             <CheckRow
               icon={gateway.operationMode === "competition" ? Trophy : FlaskConical}
               label="运行模式"
-              state={`${operationModeCopy[gateway.operationMode].label} · 额度${operationModeCopy[gateway.operationMode].quota}`}
+              state={operationModeCopy[gateway.operationMode].label}
               tone={
                 !gateway.operationModeStateFileValid
                   ? "danger"
@@ -453,12 +470,6 @@ function Overview({
               label="选手访问鉴权"
               state={gateway.clientAuthConfigured ? "已启用" : "未配置"}
               tone={gateway.clientAuthConfigured ? "success" : "warning"}
-            />
-            <CheckRow
-              icon={ShieldCheck}
-              label="匿名调用"
-              state={gateway.allowAnonymous ? "允许" : "已关闭"}
-              tone={gateway.allowAnonymous ? "warning" : "success"}
             />
           </div>
         </section>
@@ -697,7 +708,6 @@ function ModeControl({
   onChanged: () => Promise<void>;
 }) {
   const [pendingMode, setPendingMode] = useState<OperationMode | null>(null);
-  const [resetUsage, setResetUsage] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -711,31 +721,20 @@ function ModeControl({
       const response = await fetch("/api/admin/mode", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: nextMode, resetUsage }),
+        body: JSON.stringify({ mode: nextMode }),
       });
       if (response.status === 401) {
         window.dispatchEvent(new Event("modelmux-admin-unauthorized"));
         return;
       }
       const payload = (await response.json().catch(() => null)) as
-        | { error?: string; warning?: string; usageReset?: number | null }
+        | { error?: string }
         | null;
       if (!response.ok) {
         throw new Error(payload?.error ?? `运行模式接口返回 HTTP ${response.status}`);
       }
       setPendingMode(null);
-      setResetUsage(false);
-      setNotice(
-        payload?.warning ??
-          [
-            `已切换到${operationModeCopy[nextMode].label}`,
-            typeof payload?.usageReset === "number"
-              ? `并清零 ${payload.usageReset} 个选手账号的已用次数`
-              : null,
-          ]
-            .filter(Boolean)
-            .join("，"),
-      );
+      setNotice(`已切换到${operationModeCopy[nextMode].label}`);
       await onChanged();
     } catch (updateError) {
       setError(
@@ -756,7 +755,7 @@ function ModeControl({
           <div>
             <span className="field-label">OPERATION MODE</span>
             <h2>运行模式</h2>
-            <p>决定选手总请求额度是否生效，评委端和选手端会同步显示当前模式。</p>
+            <p>用于区分赛前演练与正式比赛的现场展示状态。</p>
           </div>
           <span className={`service-state-badge ${activeMode}`}>
             <span />
@@ -768,7 +767,7 @@ function ModeControl({
           {!gateway.operationModeStateFileValid && (
             <div className="service-warning" role="alert">
               <CircleAlert size={17} />
-              <span>运行模式状态文件无效，系统已按测试模式限量运行。重新选择模式可修复状态文件。</span>
+              <span>运行模式状态文件无效，系统已按测试模式运行。重新选择模式可修复状态文件。</span>
             </div>
           )}
           {error && (
@@ -796,17 +795,12 @@ function ModeControl({
                   key={candidate}
                   onClick={() => {
                     setNotice(null);
-                    setResetUsage(false);
                     setPendingMode(candidate);
                   }}
                   type="button"
                 >
                   <span className="mode-choice-icon"><ModeIcon size={19} /></span>
                   <strong>{operationModeCopy[candidate].label}</strong>
-                  <span className="mode-choice-quota">
-                    {candidate === "competition" ? <InfinityIcon size={14} /> : <Gauge size={14} />}
-                    额度{operationModeCopy[candidate].quota}
-                  </span>
                   <small>{operationModeCopy[candidate].summary}</small>
                   <span className="mode-choice-state">{active ? "当前模式" : "切换到此模式"}</span>
                 </button>
@@ -815,9 +809,8 @@ function ModeControl({
           </div>
 
           <div className="mode-effect-list">
-            <ModeEffect label="选手总请求额度" value={gateway.quotaEnforced ? "生效，用完返回 429" : "不限量，仅继续统计调用次数"} />
-            <ModeEffect label="每分钟频率限制" value={`${gateway.rateLimitRpm} 次 / 分钟，两种模式都生效`} />
-            <ModeEffect label="评委端与选手端" value={`顶部显示「${operationModeCopy[activeMode].label}」横幅`} />
+            <ModeEffect label="模型 API" value="只校验凭证并转发，不受运行模式影响" />
+            <ModeEffect label="考务工作台与选手端" value={`同步显示「${operationModeCopy[activeMode].label}」状态`} />
           </div>
         </div>
 
@@ -845,24 +838,13 @@ function ModeControl({
             </div>
             <h2 id="switch-mode-title">切换到{operationModeCopy[pendingMode].label}？</h2>
             <p id="switch-mode-description">
-              {pendingMode === "competition"
-                ? "选手总请求额度将立即失效，模型调用不再按额度拦截；每分钟频率限制保持不变。评委端和选手端会立刻显示比赛模式横幅。"
-                : "选手总请求额度将立即恢复生效。若选手在比赛模式下的调用次数已超过额度，切换后会直接返回 429，请一并清零已用次数。"}
+              考务工作台、选手端和比赛大屏会立即显示新的运行模式。
             </p>
-            <label className="confirm-dialog-option">
-              <input
-                checked={resetUsage}
-                disabled={saving}
-                onChange={(event) => setResetUsage(event.target.checked)}
-                type="checkbox"
-              />
-              <span>同时清零所有选手的已用调用次数</span>
-            </label>
             <div className="confirm-dialog-actions">
               <button
                 className="secondary-action"
                 disabled={saving}
-                onClick={() => { setPendingMode(null); setResetUsage(false); }}
+                onClick={() => setPendingMode(null)}
                 type="button"
               >
                 取消

@@ -1,0 +1,36 @@
+{
+  "generatedAt": "2026-08-27T08:31:51.315Z",
+  "shot": "10",
+  "title": "编辑答案与保存恢复",
+  "voice": "Tingting",
+  "voiceRate": 165,
+  "durationSeconds": 37.471,
+  "video": "10-编辑答案与保存恢复.mp4",
+  "subtitles": "10-编辑答案与保存恢复.srt",
+  "scenes": [
+    {
+      "scene": 1,
+      "frame": "16-editor",
+      "speechDurationSeconds": 8.357,
+      "durationSeconds": 8.907
+    },
+    {
+      "scene": 2,
+      "frame": "16-upload",
+      "speechDurationSeconds": 4.622,
+      "durationSeconds": 5.172
+    },
+    {
+      "scene": 3,
+      "frame": "16-save",
+      "speechDurationSeconds": 8.631,
+      "durationSeconds": 9.181
+    },
+    {
+      "scene": 4,
+      "frame": "17-detect",
+      "speechDurationSeconds": 13.661,
+      "durationSeconds": 14.211
+    }
+  ]
+}
