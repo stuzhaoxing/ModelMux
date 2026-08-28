@@ -24,6 +24,11 @@ import {
   type AdminJudgeView,
 } from "@/lib/admin/navigation";
 import { eventStreamRetryDelayMs } from "@/lib/competition/event-stream";
+import {
+  questionTitleIsWithinLimit,
+  questionTitleLength,
+  questionTitleMaxLength,
+} from "@/lib/competition/question";
 import type { ActivityEntry, CompetitionControl, CompetitionQuestion, JudgeAnswerRow, JudgeQuestion } from "@/lib/competition/types";
 import type { OperationMode } from "@/lib/gateway/operation-mode";
 import { apiRequest, formatCompetitionTime } from "./api";
@@ -247,6 +252,14 @@ export default function JudgeApp() {
   }), [answers]);
 
   async function saveQuestion() {
+    if (!title.trim()) {
+      setError("题目标题不能为空");
+      return;
+    }
+    if (!questionTitleIsWithinLimit(title.trim())) {
+      setError(`题目标题不能超过 ${questionTitleMaxLength} 字`);
+      return;
+    }
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -495,7 +508,21 @@ export default function JudgeApp() {
           ) : view === "questions" ? (
             <div className="question-composer">
               <div className="composer-meta">
-                <label>题目标题<input maxLength={200} value={title} disabled={!questionEditable} onChange={(event) => setTitle(event.target.value)} placeholder="输入考核题目标题" /></label>
+                <label>
+                  <span className="composer-field-heading">
+                    题目标题
+                    <output className={questionTitleIsWithinLimit(title) ? "" : "over-limit"} aria-live="polite">
+                      {questionTitleLength(title)}/{questionTitleMaxLength}
+                    </output>
+                  </span>
+                  <input
+                    maxLength={questionTitleMaxLength}
+                    value={title}
+                    disabled={!questionEditable}
+                    onChange={(event) => setTitle(event.target.value)}
+                    placeholder="输入考核题目标题"
+                  />
+                </label>
                 {selectedQuestion && <span className={`large-status ${selectedQuestion.status}`}>{statusLabel(selectedQuestion.status)}</span>}
               </div>
               <RichTextEditor value={contentHtml} onChange={setContentHtml} purpose="question" editable={questionEditable} minHeight={430} />

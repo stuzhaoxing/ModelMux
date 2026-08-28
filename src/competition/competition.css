@@ -452,6 +452,9 @@
 }
 
 .composer-meta label { flex: 1 1 auto; }
+.composer-field-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.composer-field-heading output { color: #7f898f; font: 11px/16px "SFMono-Regular", Consolas, monospace; }
+.composer-field-heading output.over-limit { color: #a53f3f; }
 .composer-meta input,
 .account-form input,
 .login-panel input {
@@ -559,6 +562,12 @@
 .rich-content h2 { margin: 22px 0 10px; font-size: 19px; line-height: 1.45; }
 .rich-editor-content h3,
 .rich-content h3 { margin: 18px 0 9px; font-size: 16px; }
+.rich-editor-content h4,
+.rich-editor-content h5,
+.rich-editor-content h6,
+.rich-content h4,
+.rich-content h5,
+.rich-content h6 { margin: 16px 0 8px; font-size: 15px; line-height: 1.5; }
 .rich-editor-content ul,
 .rich-editor-content ol,
 .rich-content ul,
@@ -571,6 +580,14 @@
 .rich-content code:not(pre code) { padding: 2px 4px; color: #34493f; background: #e9efec; border-radius: 3px; font-family: "SFMono-Regular", Consolas, monospace; font-size: .88em; }
 .rich-editor-content a,
 .rich-content a { color: #246e8b; text-decoration: underline; }
+.rich-editor-content table,
+.rich-content table { width: 100%; margin: 16px 0; overflow: hidden; border: 1px solid #d8dee1; border-collapse: collapse; table-layout: fixed; }
+.rich-editor-content th,
+.rich-editor-content td,
+.rich-content th,
+.rich-content td { padding: 9px 11px; text-align: left; vertical-align: top; border: 1px solid #d8dee1; }
+.rich-editor-content th,
+.rich-content th { background: #f1f5f3; font-weight: 650; }
 .rich-editor-content img,
 .rich-content img { display: block; max-width: 100%; max-height: 560px; margin: 16px auto; object-fit: contain; border: 1px solid #dce1e4; border-radius: 3px; }
 .previewable-rich-content img { cursor: zoom-in; }

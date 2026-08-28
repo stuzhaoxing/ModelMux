@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cleanRichText, richTextHasContent } from "./content";
+import { cleanRichText, renderRichTextHtml, richTextHasContent } from "./content";
 
 describe("competition rich text", () => {
   it("keeps supported formatting and local media", () => {
@@ -40,5 +40,46 @@ describe("competition rich text", () => {
 
     expect(html).not.toContain("rich-attachment");
     expect(html).not.toContain("outside.example");
+  });
+
+  it("renders Markdown stored as plain editor paragraphs", () => {
+    const rendered = renderRichTextHtml([
+      "<p>### 采样口核查</p>",
+      "<p>**结论：需要结合排污许可核查。**</p>",
+      "<p>1. 核查监测方案</p>",
+      "<p>2. 核查排放口位置</p>",
+    ].join(""));
+
+    expect(rendered).toContain("<h3>采样口核查</h3>");
+    expect(rendered).toContain("<strong>结论：需要结合排污许可核查。</strong>");
+    expect(rendered).toContain("<ol>");
+    expect(rendered).toContain("<li>");
+    expect(rendered).not.toContain("###");
+    expect(rendered).not.toContain("**");
+  });
+
+  it("preserves intentional rich HTML instead of parsing its text as Markdown", () => {
+    const html = '<p><strong>已排版</strong> **保留原文**</p><img src="/api/competition/media/12" alt="图">';
+    expect(renderRichTextHtml(html)).toBe(cleanRichText(html));
+  });
+
+  it("sanitizes links and HTML produced from Markdown", () => {
+    const rendered = renderRichTextHtml("[危险链接](javascript:alert(1))\n\n<script>alert(2)</script>\n\n**安全文本**");
+    expect(rendered).not.toContain("javascript:");
+    expect(rendered).not.toContain("<script");
+    expect(rendered).toContain("<strong>安全文本</strong>");
+  });
+
+  it("renders common GFM table and strikethrough syntax", () => {
+    const rendered = renderRichTextHtml([
+      "| 项目 | 结论 |",
+      "| --- | --- |",
+      "| 采样口 | ~~缺失~~ 已补充 |",
+    ].join("\n"));
+
+    expect(rendered).toContain("<table>");
+    expect(rendered).toContain("<th>项目</th>");
+    expect(rendered).toContain("<td>采样口</td>");
+    expect(rendered).toContain("<del>缺失</del>");
   });
 });

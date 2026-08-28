@@ -4,6 +4,7 @@ import { Download, Maximize2, X, ZoomIn, ZoomOut } from "lucide-react";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
@@ -11,6 +12,8 @@ import {
   type PointerEvent,
   type WheelEvent,
 } from "react";
+
+import { renderRichTextHtml } from "@/lib/competition/content";
 
 interface PreviewImage {
   src: string;
@@ -67,6 +70,7 @@ export function PreviewableRichContent({
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const [imageReady, setImageReady] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const renderedHtml = useMemo(() => renderRichTextHtml(html), [html]);
 
   const closePreview = useCallback(() => setPreview(null), []);
 
@@ -141,7 +145,7 @@ export function PreviewableRichContent({
       image.setAttribute("aria-label", `全屏预览${image.alt.trim() ? `：${image.alt.trim()}` : "题目图片"}`);
       if (!image.title) image.title = "全屏预览图片";
     }
-  }, [html]);
+  }, [renderedHtml]);
 
   useEffect(() => {
     if (!preview) return;
@@ -243,7 +247,7 @@ export function PreviewableRichContent({
         className={`rich-content previewable-rich-content ${className}`.trim()}
         onClick={handleContentClick}
         onKeyDown={handleContentKeyDown}
-        dangerouslySetInnerHTML={{ __html: html }}
+        dangerouslySetInnerHTML={{ __html: renderedHtml }}
       />
       {preview && (
         <div
