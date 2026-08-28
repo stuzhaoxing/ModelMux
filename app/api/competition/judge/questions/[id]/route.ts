@@ -5,6 +5,7 @@ import { z } from "zod";
 import { recordActivity } from "@/lib/competition/activity";
 import { cleanRichText, richTextHasContent } from "@/lib/competition/content";
 import { competitionError, parseJson, requireJudgeOperator, requireSameOrigin } from "@/lib/competition/http";
+import { questionTitleIsWithinLimit, questionTitleMaxLength } from "@/lib/competition/question";
 import {
   deleteQuestionWhileStopped,
   getCompetitionControl,
@@ -45,6 +46,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   if (!id) return NextResponse.json({ error: "题目不存在" }, { status: 404 });
   try {
     const input = await parseJson(request, updateSchema);
+    if (!questionTitleIsWithinLimit(input.title)) {
+      return NextResponse.json({ error: `题目标题不能超过 ${questionTitleMaxLength} 字` }, { status: 400 });
+    }
     const contentHtml = cleanRichText(input.contentHtml);
     if (!richTextHasContent(contentHtml)) return NextResponse.json({ error: "题目内容不能为空" }, { status: 400 });
     const changed = await updateQuestion({ id, title: input.title, contentHtml, expectedVersion: input.expectedVersion });

@@ -1,3 +1,6 @@
+import { hasChildren, isTag, isText, type AnyNode } from "domhandler";
+import { parseDocument } from "htmlparser2";
+import { marked } from "marked";
 import sanitizeHtml from "sanitize-html";
 
 import { isStoredImagePath, storedMediaId } from "./images";
@@ -7,6 +10,9 @@ const attachmentClasses = new Set([
   "attachment-details",
   "attachment-download",
 ]);
+
+const semanticRichTextPattern = /<(?:a|blockquote|code|del|em|h[1-6]|hr|img|li|ol|pre|s|small|span|strong|table|tbody|td|th|thead|tr|u|ul)\b/i;
+const markdownFormattingPattern = /(^|\n)\s{0,3}(?:#{1,6}\s|>|```|~~~|[-+*]\s|\d+[.)]\s)|(?:\*\*|__|~~|`[^`]+`|!?(?:\[[^\]]+\])\([^\s)]+(?:\s+"[^"]*")?\))/m;
 
 function cleanAttachmentName(value: string | undefined): string {
   const name = value?.trim() || "未命名附件";
@@ -64,6 +70,9 @@ export function cleanRichText(input: string): string {
       "h1",
       "h2",
       "h3",
+      "h4",
+      "h5",
+      "h6",
       "ul",
       "ol",
       "li",
@@ -75,6 +84,13 @@ export function cleanRichText(input: string): string {
       "a",
       "span",
       "small",
+      "del",
+      "table",
+      "thead",
+      "tbody",
+      "tr",
+      "th",
+      "td",
     ],
     allowedAttributes: {
       a: [
@@ -106,6 +122,35 @@ export function cleanRichText(input: string): string {
       a: transformLink,
     },
   }).trim();
+}
+
+function markdownTextFromHtmlNode(node: AnyNode): string {
+  if (isText(node)) return node.data;
+  if (!hasChildren(node)) return "";
+  if (isTag(node) && node.name === "br") return "\n";
+
+  const content = node.children.map(markdownTextFromHtmlNode).join("");
+  return isTag(node) && node.name === "p" ? `${content}\n\n` : content;
+}
+
+/**
+ * Historic questions can contain Markdown pasted into the rich-text editor. Tiptap
+ * stores that paste as plain paragraphs, so render those paragraphs as Markdown
+ * while leaving intentional rich HTML, media, and attachments unchanged.
+ */
+export function renderRichTextHtml(input: string): string {
+  const cleanHtml = cleanRichText(input);
+  if (!cleanHtml || semanticRichTextPattern.test(cleanHtml)) return cleanHtml;
+
+  const markdown = markdownTextFromHtmlNode(parseDocument(cleanHtml))
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (!markdownFormattingPattern.test(markdown)) return cleanHtml;
+
+  const rendered = marked.parse(markdown, { async: false, breaks: true, gfm: true });
+  return cleanRichText(rendered);
 }
 
 export function richTextHasContent(html: string): boolean {
