@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { activityAfter, latestActivityId } from "@/lib/competition/activity";
 import { coalesceCompetitionEvents, competitionEventsAfter, latestCompetitionEventId } from "@/lib/competition/events";
-import { competitionError, requireRole } from "@/lib/competition/http";
+import { competitionError, requireJudgeOperator, requireRole } from "@/lib/competition/http";
 import type { CompetitionRole } from "@/lib/competition/types";
 import { operationModeState } from "@/lib/gateway/operation-mode";
 
@@ -27,8 +27,10 @@ export async function GET(request: NextRequest): Promise<Response> {
   const value = request.nextUrl.searchParams.get("role");
   const role: CompetitionRole | null = value === "judge" || value === "contestant" ? value : null;
   if (!role) return NextResponse.json({ error: "实时通道角色无效" }, { status: 400 });
-  const user = await requireRole(request, role);
-  if (user instanceof NextResponse) return user;
+  const access = role === "judge"
+    ? requireJudgeOperator(request)
+    : await requireRole(request, "contestant");
+  if (access instanceof NextResponse) return access;
   try {
     let cursor = await latestCompetitionEventId();
     // Judges get the live 现场日志 on the same channel; contestants never do.

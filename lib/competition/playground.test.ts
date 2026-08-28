@@ -72,6 +72,19 @@ describe("contestant playground", () => {
     })).toThrow();
   });
 
+  it("does not impose a local size limit on Base64 image input", () => {
+    const base64 = "A".repeat(1_400_000);
+    const input = playgroundRequestSchema.parse({
+      model: "qwen3.7-flash",
+      family: "qwen",
+      supportsImage: true,
+      prompt: "分析图片",
+      imageUrl: `data:image/png;base64,${base64}`,
+    });
+
+    expect(input.imageUrl).toHaveLength(base64.length + 22);
+  });
+
   it("uses the public OpenAI-compatible route and contestant API key", () => {
     const input = playgroundRequestSchema.parse({
       model: "deepseek-v4-flash",

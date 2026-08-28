@@ -1,4 +1,3 @@
-import type { OperationMode } from "@/lib/gateway/operation-mode";
 import type {
   ModelFamily,
   ModelInputModality,
@@ -24,8 +23,6 @@ export interface CompetitionUser {
   displayName: string;
   password: string | null;
   apiKey: string | null;
-  requestQuota: number;
-  requestsUsed: number;
   active: boolean;
   createdAt: string;
   lastLoginAt: string | null;
@@ -34,14 +31,6 @@ export interface CompetitionUser {
 export interface ContestantApiAccess {
   apiBase: string;
   apiKey: string;
-  requestQuota: number;
-  requestsUsed: number;
-  requestsRemaining: number;
-  // 比赛模式下 quotaEnforced 为 false，总额度不再拦截调用，
-  // requestQuota / requestsRemaining 只作为测试模式的参考值保留。
-  operationMode: OperationMode;
-  quotaEnforced: boolean;
-  rateLimitRpm: number;
   models: Array<{
     id: string;
     name: string;

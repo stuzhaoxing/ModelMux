@@ -1,5 +1,8 @@
 export const adminViewPaths = {
   overview: "/admin",
+  competition: "/admin/competition",
+  questions: "/admin/questions",
+  answers: "/admin/answers",
   accounts: "/admin/accounts",
   models: "/admin/models",
   logs: "/admin/logs",
@@ -7,8 +10,18 @@ export const adminViewPaths = {
 } as const;
 
 export type AdminViewId = keyof typeof adminViewPaths;
+export type AdminJudgeView = "dashboard" | "questions" | "answers";
+
+export const adminJudgeViewPaths: Record<AdminJudgeView, string> = {
+  dashboard: adminViewPaths.competition,
+  questions: adminViewPaths.questions,
+  answers: adminViewPaths.answers,
+};
 
 const routedAdminViewIds = [
+  "competition",
+  "questions",
+  "answers",
   "accounts",
   "models",
   "logs",
@@ -25,4 +38,13 @@ export function adminViewFromPathname(pathname: string): AdminViewId {
     ([, viewPath]) => viewPath === normalizedPathname,
   );
   return (match?.[0] as AdminViewId | undefined) ?? "overview";
+}
+
+export function isAdminJudgeViewId(view: AdminViewId): boolean {
+  return view === "competition" || view === "questions" || view === "answers";
+}
+
+export function adminJudgeViewFromPathname(pathname: string): AdminJudgeView {
+  if (pathname === adminJudgeViewPaths.dashboard) return "dashboard";
+  return pathname === adminJudgeViewPaths.answers ? "answers" : "questions";
 }

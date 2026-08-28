@@ -4,7 +4,6 @@ import { z } from "zod";
 
 import { requireAdmin } from "@/lib/admin/auth";
 import { requireSameOrigin } from "@/lib/competition/http";
-import { resetContestantRequestUsage } from "@/lib/competition/repository";
 import {
   operationModeState,
   setOperationMode,
@@ -15,7 +14,6 @@ export const dynamic = "force-dynamic";
 
 const operationModeSchema = z.object({
   mode: z.enum(["test", "competition"]),
-  resetUsage: z.boolean().default(false),
 });
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
@@ -49,27 +47,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // 模式已经落盘，清零失败不应该回滚模式，只回报为部分成功。
-  if (!parsed.data.resetUsage) {
-    return NextResponse.json(
-      { ...state, usageReset: null },
-      { headers: { "Cache-Control": "no-store" } },
-    );
-  }
-  try {
-    return NextResponse.json(
-      { ...state, usageReset: await resetContestantRequestUsage() },
-      { headers: { "Cache-Control": "no-store" } },
-    );
-  } catch (error) {
-    console.error("Failed to reset contestant request usage", error);
-    return NextResponse.json(
-      {
-        ...state,
-        usageReset: null,
-        warning: "运行模式已切换，但清零选手已用次数失败，请检查考核数据库。",
-      },
-      { headers: { "Cache-Control": "no-store" } },
-    );
-  }
+  return NextResponse.json(state, {
+    headers: { "Cache-Control": "no-store" },
+  });
 }

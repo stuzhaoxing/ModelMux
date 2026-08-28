@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 import { createJudgeAnswerArchive } from "@/lib/competition/judge-export";
-import { competitionError, requireRole } from "@/lib/competition/http";
+import { competitionError, requireJudgeOperator } from "@/lib/competition/http";
 import { getJudgeAnswerExportSnapshot } from "@/lib/competition/repository";
 
 export const runtime = "nodejs";
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest): Promise<Response> {
   try {
-    const user = await requireRole(request, "judge");
+    const user = requireJudgeOperator(request);
     if (user instanceof NextResponse) return user;
 
     const archive = await createJudgeAnswerArchive(await getJudgeAnswerExportSnapshot());

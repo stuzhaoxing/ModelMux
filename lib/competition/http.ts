@@ -2,6 +2,8 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import type { ZodType } from "zod";
 
+import { requireAdmin } from "@/lib/admin/auth";
+
 import { forbidden, hasSameOrigin, sessionUser, unauthorized } from "./auth";
 import type { CompetitionRole, SessionUser } from "./types";
 
@@ -26,6 +28,26 @@ export async function requireSession(
   } catch (error) {
     return competitionError(error);
   }
+}
+
+export interface JudgeOperator {
+  id: null;
+  role: "judge";
+  username: "admin";
+  displayName: "管理员";
+}
+
+export function requireJudgeOperator(
+  request: NextRequest,
+): JudgeOperator | NextResponse {
+  const admin = requireAdmin(request);
+  if (admin instanceof NextResponse) return admin;
+  return {
+    id: null,
+    role: "judge",
+    username: "admin",
+    displayName: "管理员",
+  };
 }
 
 export function requireSameOrigin(request: NextRequest): NextResponse | null {

@@ -1,14 +1,8 @@
 import type { GatewayMetrics, RequestLog } from "./types";
 
-interface RateBucket {
-  windowStartedAt: number;
-  count: number;
-}
-
 interface GatewayRuntimeState {
   startedAt: number;
   keyCursor: Map<string, number>;
-  rateBuckets: Map<string, RateBucket>;
   logs: RequestLog[];
   clients: Set<string>;
   requests: number;
@@ -23,7 +17,6 @@ declare global {
 const runtime: GatewayRuntimeState = globalThis.__modelmuxRuntime ?? {
   startedAt: Math.floor(Date.now() / 1000),
   keyCursor: new Map(),
-  rateBuckets: new Map(),
   logs: [],
   clients: new Set(),
   requests: 0,
@@ -42,34 +35,6 @@ export function nextProviderKey(poolId: string, keys: string[]): string {
   const key = keys[cursor % keys.length];
   runtime.keyCursor.set(poolId, (cursor + 1) % keys.length);
   return key;
-}
-
-export function consumeRateLimit(
-  clientId: string,
-  limit: number,
-  now = Date.now(),
-): { allowed: boolean; remaining: number; resetAt: number } {
-  const existing = runtime.rateBuckets.get(clientId);
-  const bucket =
-    !existing || now - existing.windowStartedAt >= 60_000
-      ? { windowStartedAt: now, count: 0 }
-      : existing;
-
-  if (bucket.count >= limit) {
-    return {
-      allowed: false,
-      remaining: 0,
-      resetAt: bucket.windowStartedAt + 60_000,
-    };
-  }
-
-  bucket.count += 1;
-  runtime.rateBuckets.set(clientId, bucket);
-  return {
-    allowed: true,
-    remaining: Math.max(0, limit - bucket.count),
-    resetAt: bucket.windowStartedAt + 60_000,
-  };
 }
 
 export function recordRequest(log: RequestLog): void {

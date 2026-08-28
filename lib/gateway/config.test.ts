@@ -16,7 +16,6 @@ describe("gateway config", () => {
     const config = loadGatewayConfig(env());
 
     expect(config.deploymentMode).toBe("local");
-    expect(config.allowAnonymous).toBe(false);
     expect(config.clientKeys).toEqual([]);
     expect(config.internalBaseUrl).toBeNull();
     expect(config.externalBaseUrl).toBeNull();
@@ -234,7 +233,6 @@ describe("gateway config", () => {
     ).toMatchObject({
       provider: "aliyun",
       upstreamModel: "qwen3.7-flash",
-      adapter: "dashscope",
     });
   });
 
@@ -282,7 +280,6 @@ describe("gateway config", () => {
                 upstreamModel: "deepseek-v4-pro",
                 apiKeyEnv: "DEEPSEEK_API_KEYS",
                 priority: 100,
-                adapter: "deepseek",
               },
             ],
           }),

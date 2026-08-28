@@ -7,7 +7,7 @@ import {
   activityTotal,
   recentActivity,
 } from "@/lib/competition/activity";
-import { competitionError, requireRole } from "@/lib/competition/http";
+import { competitionError, requireJudgeOperator } from "@/lib/competition/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ function positiveInt(value: string | null, fallback: number): number {
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const user = await requireRole(request, "judge");
+  const user = requireJudgeOperator(request);
   if (user instanceof NextResponse) return user;
   try {
     const after = positiveInt(request.nextUrl.searchParams.get("after"), 0);

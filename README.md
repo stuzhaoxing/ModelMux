@@ -8,24 +8,24 @@
 - `GET /health`，覆盖网关配置、停服开关和考核数据库连通性；MySQL 连不上时返回 `503` 且 `status` 为 `degraded`
 - `GET /v1/models`
 - `POST /v1/chat/completions`，支持普通响应与 SSE 流式透传
-- 每位选手独立 API Key、持久化请求额度、模型白名单、请求体限制和单进程 RPM 限流
+- 每位选手独立 API Key 和模型白名单；网关不设置账号调用额度、RPM 或请求体大小上限
 - 供应商 Key 轮换、按优先级路由及响应开始前的故障切换
 - 管理员一键停止或恢复模型 API，停服状态跨进程重启持久化
-- 测试模式与比赛模式双运行模式，比赛模式解除选手总请求额度，评委端和选手端顶部同步显示当前模式
+- 测试模式与比赛模式用于考务状态和大屏展示，模型 API 在两种模式下采用相同转发规则
 - 最近 100 条请求元数据和进程级运行指标
 - 管理员使用独立登录入口和独立会话 Cookie；评委和选手共用统一登录页，由账号本身决定进哪一端
 - 评委富文本发布/关闭题目，选手通过 SSE 实时接题、富文本答题、手动保存草稿与最终提交
 - 选手端答案实时写入浏览器 localStorage；刷新或异常退出后若本机内容与服务端草稿不同，会用横幅询问恢复还是丢弃
 - 评委端和选手端的 SSE 通道在服务重启、反代报错后自动退避重连，不需要手动刷新页面
 - 评委实时查看全部选手的未开始、草稿、已提交状态及完整时间记录
-- 单密码保护的比赛大屏实时显示比赛状态、倒计时、全部选手答题进度、模型调用次数和累计 Token 消耗
+- 单密码保护的比赛大屏实时显示比赛状态、倒计时和全部选手答题进度
 - 评委端可一键导出全部已发布/已关闭题目的答卷 ZIP；ZIP 按选手分目录，每道题同时生成 Word 和 PDF，未作答也会保留明确标注
 - MySQL 持久化考核数据，题目和答卷的图片及任意附件流式保存在服务器本地数据目录
-- 选手登录后可查看专属 API URL、API Key、已用/剩余额度、允许模型和调用示例
-- 选手 API 文档页内置 Playground，支持文本与 Qwen 图片理解测试；调用走同一个网关端点，因此与外部客户端一样受 RPM 限流并在测试模式下扣减总请求额度
+- 选手登录后可查看专属 API URL、API Key、允许模型和调用示例
+- 选手 API 文档页内置 Playground，支持文本与 Qwen 图片理解测试；调用与外部客户端走同一个网关端点，不附加本地额度或频率限制
 - 公网实例走 `deploy.sh` 本地构建推送 + systemd + nginx，赛中实例走 macOS `launchd` 常驻
 
-选手 API Key 和总请求额度随账号保存在 MySQL；运维客户端 Key、供应商 Key 和路由仍使用环境变量管理。网关调用日志与分钟限流状态保存在进程内存。模型 API 的停服状态和运行模式分别保存在 `MODELMUX_DATA_DIR/gateway-service-state.json` 与 `gateway-operation-mode.json`，考核账号、题目、答卷和时间记录持久化到 MySQL。
+选手 API Key 随账号保存在 MySQL；运维客户端 Key、供应商 Key 和路由仍使用环境变量管理。最近请求元数据保存在进程内存。模型 API 的停服状态和运行模式分别保存在 `MODELMUX_DATA_DIR/gateway-service-state.json` 与 `gateway-operation-mode.json`，考核账号、题目、答卷和时间记录持久化到 MySQL。
 
 ## 本地开发
 
@@ -37,7 +37,7 @@ cp .env.example .env.local
 pnpm dev
 ```
 
-选手入口为 `http://localhost:1444/contestant/questions`，API 文档为 `http://localhost:1444/contestant/api-docs`（Playground 是这个页面里的弹窗），比赛投屏为 `http://localhost:1444/screen`，管理员控制台为 `http://localhost:1444/admin`。默认关闭匿名调用；没有有效选手账号或运维 Key 时，网关不会成为开放代理。
+选手入口为 `http://localhost:1444/contestant/questions`，API 文档为 `http://localhost:1444/contestant/api-docs`（Playground 是这个页面里的弹窗），比赛投屏为 `http://localhost:1444/screen`，管理员控制台为 `http://localhost:1444/admin`。模型 API 不支持匿名调用；没有有效选手账号或运维 Key 时，网关不会成为开放代理。
 
 管理员总览通过 `MODELMUX_INTERNAL_BASE_URL` 和 `MODELMUX_EXTERNAL_BASE_URL` 显示内网、外网入站端口及完整 API 地址。没有公网入站服务时将外网地址留空，总览会明确显示“未开放”。
 
@@ -53,7 +53,7 @@ pnpm dev
 
 评委和选手共用一个会话 Cookie，因此同一个浏览器同一时刻只能是其中一个身份，后登录的会顶掉先登录的；要同时开两端请用两个浏览器或无痕窗口。管理员 Cookie、大屏只读 Cookie 与它们相互独立，可以同时保持登录；大屏虽然复用管理员密码，但大屏会话不能访问 `/admin` 或 `/api/admin/*`。同一个账号名同时存在于评委和选手时，登录页会让本人再选一次角色。后台页面和 `/api/admin/*` 均强制验证管理员会话；模型 API 另用客户端 API Key，不复用任何网页登录凭据。
 
-评委在 Dashboard 填写比赛时长后开始比赛；开始状态下选手同时看到整套题目并可正常保存、提交，`/screen` 同步显示倒计时。评委可随时停止比赛，停止或自然到时后选手端隐藏全部题目，只显示“比赛已结束”；再次开始会重新计时并保留历史答案。首次开始前显示“比赛未开始”。比赛未运行时，评委可在 `/judge/answers` 删除题目，删除操作会同时永久删除该题已有答卷；比赛进行中禁止删除。默认时长由 `MODELMUX_COMPETITION_DURATION_MINUTES` 控制，范围 1-1440 分钟，默认 90 分钟。
+评委在 Dashboard 填写比赛时长后开始比赛；开始状态下选手同时看到整套题目并可正常保存、提交，`/screen` 同步显示倒计时。评委可随时停止比赛，停止或自然到时后选手端隐藏全部题目，只显示“比赛已结束”；再次开始会重新计时并保留历史答案。首次开始前显示“比赛未开始”。比赛未运行时，评委可在 `/judge/answers` 删除题目，删除操作会同时永久删除该题已有答卷；比赛进行中禁止删除。默认时长由 `MODELMUX_COMPETITION_DURATION_MINUTES` 控制，必须为正整数，默认 90 分钟。
 
 评委在 Dashboard 点击“导出全部答卷”即可下载归档 ZIP。导出会把选手回答中的图片嵌入 Word/PDF，普通附件仍以文件名、大小和站内下载地址写入文档，不会把任意大的普通附件复制进归档；附件仍保存在 `MODELMUX_DATA_DIR/uploads`，可从系统中下载。大屏每 3 秒刷新数据，选手超过单屏容量时自动调整布局。
 
@@ -80,6 +80,8 @@ curl http://localhost:1444/v1/chat/completions \
 ```
 
 模型 API 统一使用 OpenAI Chat Completions 兼容规范和 `Authorization: Bearer <client-key>` 鉴权。实际调用由下方白名单映射到对应国产模型平台，供应商密钥不会下发给选手。
+
+模型 API 和选手 Playground 不设置 Base64 请求体大小上限，网关会完整解析并转发请求，由上游模型平台决定是否接受。Base64 会比原始二进制数据增大约三分之一，大请求在并发时会占用更多网关内存。
 
 客户端只能使用以下白名单型号，`model` 必须与模型平台返回的真实模型 ID 完全一致：
 
@@ -115,18 +117,16 @@ GLM、Kimi、MiniMax 与 Qwen 旗舰只有在 `DASHSCOPE_API_KEYS` 已配置时�
 
 “系统设置”里的运行模式与停服开关相互独立，两个实例各自保存自己的模式，公网实例切换不会影响局域网实例。
 
-| 模式 | 选手总请求额度 | 每分钟频率 | 典型用途 |
+| 模式 | 大屏状态 | 模型 API | 典型用途 |
 | --- | --- | --- | --- |
-| 测试模式 | 生效，用完返回 `429 quota_exceeded` | 生效 | 赛前公网联调、设备演练 |
-| 比赛模式 | 不拦截，只继续累计调用次数 | 生效 | 正式比赛 |
+| 测试模式 | 测试演练中 | 鉴权、白名单路由后转发 | 赛前公网联调、设备演练 |
+| 比赛模式 | 比赛进行中 | 鉴权、白名单路由后转发 | 正式比赛 |
 
-默认是测试模式。模式保存在 `MODELMUX_DATA_DIR/gateway-operation-mode.json`，跨进程重启保留；文件损坏时按测试模式限量运行，并在管理员后台给出提示。
+默认是测试模式。模式保存在 `MODELMUX_DATA_DIR/gateway-operation-mode.json`，跨进程重启保留；文件损坏时大屏回到测试演练状态，并在管理员后台给出提示。
 
-比赛模式只解除总额度，不解除 RPM 限流、模型白名单、请求体大小限制和停服开关。网关在每个响应上返回 `X-ModelMux-Mode: test|competition`；比赛模式下不再返回 `X-Quota-Remaining`。
+两种模式都不设置账号调用额度、RPM 或请求体大小上限。模式不干预请求参数和上游响应；模型白名单、供应商路由、API Key 鉴权与停服开关仍然生效。
 
 评委端和选手端顶部显示模式横幅，登录页也会显示，模式变化通过既有的 SSE 通道实时推送，不需要刷新页面。`GET /api/competition/mode` 只返回模式本身，不需要登录。
-
-切换模式时可以勾选“同时清零所有选手的已用调用次数”。从比赛模式切回测试模式时务必留意：比赛期间累计的调用次数会立刻与总额度比较，超出的账号会直接被拦截。
 
 部署步骤见 [docs/03-deployment.md](./docs/03-deployment.md)，架构边界见 [docs/02-application-architecture.md](./docs/02-application-architecture.md)。
 

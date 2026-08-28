@@ -27,7 +27,7 @@ describe("judge dashboard batch publishing", () => {
         questions={[question(1, "draft"), question(2, "draft")]}
         loading={false}
         competition={{ state: "not_started", durationMinutes: 90, startedAt: null, endsAt: null, stoppedAt: null }}
-        durationInput="90"
+        durationInput="144000"
         competitionPending={false}
         canCreateQuestions
         onOpenQuestion={vi.fn()}
@@ -41,7 +41,8 @@ describe("judge dashboard batch publishing", () => {
 
     expect(html).toContain("比赛未开始");
     expect(html).toContain("比赛时长");
-    expect(html).toContain('value="90"');
+    expect(html).toContain('value="144000"');
+    expect(html).not.toContain('max="1440"');
     expect(html).toContain("开始比赛");
     expect(html).toContain("未开始");
     expect(html).not.toContain("作答中");

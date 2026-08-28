@@ -316,6 +316,18 @@ button:focus-visible,
   padding: 30px 32px 40px;
 }
 
+.page-content.judge-page-content {
+  padding: 0;
+}
+
+.judge-page-content .admin-judge-workspace {
+  min-height: calc(100vh - 80px);
+}
+
+.judge-page-content > .error-banner {
+  margin: 18px 24px;
+}
+
 .page-content > .error-banner {
   margin-bottom: 18px;
 }
@@ -1407,6 +1419,36 @@ button:focus-visible,
   }
 }
 
+@media (max-width: 1300px) {
+  .judge-page-content .admin-judge-workspace,
+  .judge-page-content .admin-judge-workspace.log-collapsed {
+    grid-template-columns: 250px minmax(0, 1fr);
+  }
+
+  .judge-page-content .admin-judge-workspace.dashboard-view,
+  .judge-page-content .admin-judge-workspace.dashboard-view.log-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .judge-page-content .activity-log {
+    grid-column: 1 / -1;
+    max-height: 340px;
+    border-top: 1px solid #d6dce0;
+    border-left: 0;
+  }
+
+  .judge-page-content .activity-log.collapsed {
+    align-items: stretch;
+    max-height: none;
+    padding: 10px 14px;
+  }
+
+  .judge-page-content .activity-log.collapsed .activity-toggle {
+    padding: 9px 10px;
+    writing-mode: horizontal-tb;
+  }
+}
+
 @media (max-width: 900px) {
   .app-shell {
     grid-template-columns: 72px minmax(0, 1fr);
@@ -1548,12 +1590,38 @@ button:focus-visible,
     padding: 0 16px;
   }
 
+  .topbar > div:first-child {
+    min-width: 0;
+  }
+
+  .topbar .context-label,
+  .topbar .admin-identity,
+  .topbar .service-pill {
+    display: none;
+  }
+
   .topbar h1 {
-    font-size: 20px;
+    overflow: hidden;
+    font-size: 18px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .topbar-actions {
+    flex: 0 0 auto;
+    gap: 6px;
   }
 
   .page-content {
     padding: 18px 16px 28px;
+  }
+
+  .page-content.judge-page-content {
+    padding: 0;
+  }
+
+  .judge-page-content .admin-judge-workspace {
+    min-height: calc(100vh - 132px);
   }
 
   .deployment-rail,
@@ -1677,6 +1745,35 @@ button:focus-visible,
   }
 }
 
+@media (max-width: 360px) {
+  .sidebar {
+    grid-template-columns: 36px minmax(0, 1fr);
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+
+  .primary-nav {
+    gap: 2px;
+  }
+
+  .nav-item {
+    width: 34px;
+  }
+
+  .sidebar-status {
+    display: none;
+  }
+
+  .topbar {
+    padding: 0 10px;
+  }
+
+  .topbar .operation-mode-pill {
+    padding: 0 7px;
+    font-size: 11px;
+  }
+}
+
 
 /* ── 运行模式：调试 / 比赛 ─────────────────────────────────────── */
 
@@ -1796,16 +1893,6 @@ button:focus-visible,
   font-size: 16px;
 }
 
-.mode-choice-quota {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: #6b757d;
-  font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: 12px;
-  font-weight: 650;
-}
-
 .mode-choice small {
   color: #78828a;
   font-size: 13px;
@@ -1831,8 +1918,7 @@ button:focus-visible,
   box-shadow: inset 0 0 0 1px #f3d5d5;
 }
 
-.mode-choice.test.active .mode-choice-icon,
-.mode-choice.test.active .mode-choice-quota {
+.mode-choice.test.active .mode-choice-icon {
   color: #8a5b13;
 }
 
@@ -1840,8 +1926,7 @@ button:focus-visible,
   background: #fbf1de;
 }
 
-.mode-choice.competition.active .mode-choice-icon,
-.mode-choice.competition.active .mode-choice-quota {
+.mode-choice.competition.active .mode-choice-icon {
   color: #972d2d;
 }
 

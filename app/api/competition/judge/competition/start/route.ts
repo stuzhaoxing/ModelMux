@@ -3,20 +3,20 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { recordActivity } from "@/lib/competition/activity";
-import { competitionError, parseJson, requireRole, requireSameOrigin } from "@/lib/competition/http";
+import { competitionError, parseJson, requireJudgeOperator, requireSameOrigin } from "@/lib/competition/http";
 import { listJudgeQuestions, startCompetition } from "@/lib/competition/repository";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const startSchema = z.object({
-  durationMinutes: z.number().int().min(1).max(24 * 60),
+  durationMinutes: z.number().int().min(1),
 });
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const originError = requireSameOrigin(request);
   if (originError) return originError;
-  const user = await requireRole(request, "judge");
+  const user = requireJudgeOperator(request);
   if (user instanceof NextResponse) return user;
   try {
     const input = await parseJson(request, startSchema);

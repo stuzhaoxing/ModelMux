@@ -5,10 +5,7 @@ import type { PoolConnection } from "mysql2/promise";
 import { competitionPool, ensureCompetitionSchema, rows, type SqlValue } from "./db";
 import { competitionControlFromStored } from "./control";
 import { hashPassword } from "./auth";
-import {
-  contestantDefaultRequestQuota,
-  generateContestantApiKey,
-} from "./api-access";
+import { generateContestantApiKey } from "./api-access";
 import { insertCompetitionEvent } from "./events";
 import { withCompetitionTransaction } from "./transaction";
 import type {
@@ -30,8 +27,6 @@ interface UserRow extends RowDataPacket {
   display_name: string;
   event_password: string | null;
   api_key: string | null;
-  api_request_quota: number;
-  api_requests_used: number;
   active: number;
   created_at: string;
   last_login_at: string | null;
@@ -151,8 +146,6 @@ function toUser(row: UserRow): CompetitionUser {
     displayName: row.display_name,
     password: row.event_password,
     apiKey: row.api_key,
-    requestQuota: Number(row.api_request_quota),
-    requestsUsed: Number(row.api_requests_used),
     active: Boolean(row.active),
     createdAt: row.created_at,
     lastLoginAt: row.last_login_at,
@@ -189,7 +182,7 @@ function toAnswer(row: AnswerRow): ContestantAnswer {
 export async function listUsers(): Promise<CompetitionUser[]> {
   const result = await rows<UserRow[]>(
     `SELECT id, role, username, display_name, event_password, api_key,
-       api_request_quota, api_requests_used, active, created_at, last_login_at
+       active, created_at, last_login_at
      FROM competition_users WHERE deleted_at IS NULL ORDER BY role, display_name, username`,
   );
   return result.map(toUser);
@@ -204,11 +197,10 @@ export async function createUser(input: {
   await ensureCompetitionSchema();
   const passwordHash = await hashPassword(input.password);
   const apiKey = input.role === "contestant" ? generateContestantApiKey() : null;
-  const requestQuota = input.role === "contestant" ? contestantDefaultRequestQuota() : 0;
   const [result] = await competitionPool().execute<ResultSetHeader>(
     `INSERT INTO competition_users
-       (role, username, display_name, password_hash, event_password, api_key, api_request_quota)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       (role, username, display_name, password_hash, event_password, api_key)
+     VALUES (?, ?, ?, ?, ?, ?)`,
     [
       input.role,
       input.username.trim().toLowerCase(),
@@ -216,7 +208,6 @@ export async function createUser(input: {
       passwordHash,
       input.password,
       apiKey,
-      requestQuota,
     ],
   );
   return Number(result.insertId);
@@ -236,7 +227,6 @@ export async function createGeneratedUser(role: CompetitionRole): Promise<{
   displayName: string;
   password: string;
   apiKey: string | null;
-  requestQuota: number;
 }> {
   await ensureCompetitionSchema();
   const roleName = role === "judge" ? "评委" : "选手";
@@ -250,12 +240,11 @@ export async function createGeneratedUser(role: CompetitionRole): Promise<{
     try {
       const passwordHash = await hashPassword(password);
       const apiKey = role === "contestant" ? generateContestantApiKey() : null;
-      const requestQuota = role === "contestant" ? contestantDefaultRequestQuota() : 0;
       const [result] = await competitionPool().execute<ResultSetHeader>(
         `INSERT INTO competition_users
-           (role, username, display_name, password_hash, event_password, api_key, api_request_quota)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [role, username, displayName, passwordHash, password, apiKey, requestQuota],
+           (role, username, display_name, password_hash, event_password, api_key)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [role, username, displayName, passwordHash, password, apiKey],
       );
       return {
         id: Number(result.insertId),
@@ -264,7 +253,6 @@ export async function createGeneratedUser(role: CompetitionRole): Promise<{
         displayName,
         password,
         apiKey,
-        requestQuota,
       };
     } catch (error) {
       const duplicate = typeof error === "object" && error !== null && "code" in error && error.code === "ER_DUP_ENTRY";
@@ -280,8 +268,6 @@ interface ContestantApiRow extends RowDataPacket {
   username: string;
   display_name: string;
   api_key: string;
-  api_request_quota: number;
-  api_requests_used: number;
 }
 
 export interface ContestantApiIdentity {
@@ -289,8 +275,6 @@ export interface ContestantApiIdentity {
   username: string;
   displayName: string;
   apiKey: string;
-  requestQuota: number;
-  requestsUsed: number;
 }
 
 function toContestantApiIdentity(row: ContestantApiRow): ContestantApiIdentity {
@@ -299,8 +283,6 @@ function toContestantApiIdentity(row: ContestantApiRow): ContestantApiIdentity {
     username: row.username,
     displayName: row.display_name,
     apiKey: row.api_key,
-    requestQuota: Number(row.api_request_quota),
-    requestsUsed: Number(row.api_requests_used),
   };
 }
 
@@ -308,7 +290,7 @@ export async function contestantApiAccess(
   contestantId: number,
 ): Promise<ContestantApiIdentity | null> {
   const result = await rows<ContestantApiRow[]>(
-    `SELECT id, username, display_name, api_key, api_request_quota, api_requests_used
+    `SELECT id, username, display_name, api_key
      FROM competition_users
      WHERE id = ? AND role = 'contestant' AND active = TRUE
        AND deleted_at IS NULL AND api_key IS NOT NULL
@@ -323,7 +305,7 @@ export async function authenticateContestantApiKey(
 ): Promise<ContestantApiIdentity | null> {
   if (!apiKey.startsWith("sk-competition-")) return null;
   const result = await rows<ContestantApiRow[]>(
-    `SELECT id, username, display_name, api_key, api_request_quota, api_requests_used
+    `SELECT id, username, display_name, api_key
      FROM competition_users
      WHERE api_key = ? AND role = 'contestant' AND active = TRUE
        AND deleted_at IS NULL
@@ -331,118 +313,6 @@ export async function authenticateContestantApiKey(
     [apiKey],
   );
   return result[0] ? toContestantApiIdentity(result[0]) : null;
-}
-
-export interface ContestantQuotaReservation {
-  allowed: boolean;
-  // null 表示比赛模式下不限量，调用方据此省略 X-Quota-Remaining。
-  remaining: number | null;
-}
-
-export interface ContestantTokenUsage {
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-}
-
-// 比赛模式（enforceQuota 为 false）依然累加 api_requests_used，只是不再拦截，
-// 这样赛后仍能统计每位选手的真实调用次数。
-export async function reserveContestantApiRequest(
-  contestantId: number,
-  enforceQuota = true,
-): Promise<ContestantQuotaReservation> {
-  await ensureCompetitionSchema();
-  const [result] = await competitionPool().execute<ResultSetHeader>(
-    `UPDATE competition_users
-     SET api_requests_used = api_requests_used + 1
-     WHERE id = ? AND role = 'contestant' AND active = TRUE
-       AND deleted_at IS NULL${enforceQuota ? " AND api_requests_used < api_request_quota" : ""}`,
-    [contestantId],
-  );
-  if (result.affectedRows === 0) {
-    return { allowed: false, remaining: enforceQuota ? 0 : null };
-  }
-  if (!enforceQuota) return { allowed: true, remaining: null };
-  const access = await contestantApiAccess(contestantId);
-  return {
-    allowed: true,
-    remaining: access
-      ? Math.max(0, access.requestQuota - access.requestsUsed)
-      : 0,
-  };
-}
-
-// 模式切换后清零已用次数，避免测试期的消耗带进比赛，或比赛期的消耗
-// 在切回测试模式时让选手立刻超额。
-export async function resetContestantRequestUsage(): Promise<number> {
-  await ensureCompetitionSchema();
-  const connection = await competitionPool().getConnection();
-  return withCompetitionTransaction(connection, async (transaction) => {
-    await transaction.execute("DELETE FROM competition_contestant_token_minutes");
-    await transaction.execute("DELETE FROM competition_token_minutes");
-    const [result] = await transaction.execute<ResultSetHeader>(
-      `UPDATE competition_users
-       SET api_requests_used = 0,
-           api_input_tokens_used = 0,
-           api_output_tokens_used = 0,
-           api_total_tokens_used = 0
-       WHERE role = 'contestant' AND deleted_at IS NULL
-         AND (api_requests_used > 0 OR api_total_tokens_used > 0)`,
-    );
-    return result.affectedRows;
-  });
-}
-
-export async function recordContestantTokenUsage(
-  contestantId: number,
-  usage: ContestantTokenUsage,
-): Promise<void> {
-  await ensureCompetitionSchema();
-  const connection = await competitionPool().getConnection();
-  await withCompetitionTransaction(connection, async (transaction) => {
-    const [result] = await transaction.execute<ResultSetHeader>(
-      `UPDATE competition_users
-       SET api_input_tokens_used = api_input_tokens_used + ?,
-           api_output_tokens_used = api_output_tokens_used + ?,
-           api_total_tokens_used = api_total_tokens_used + ?
-       WHERE id = ? AND role = 'contestant' AND active = TRUE
-         AND deleted_at IS NULL`,
-      [usage.inputTokens, usage.outputTokens, usage.totalTokens, contestantId],
-    );
-    if (result.affectedRows === 0) return;
-    await transaction.execute(
-      `INSERT INTO competition_token_minutes
-         (minute_at, input_tokens, output_tokens, total_tokens)
-       VALUES (DATE_FORMAT(CURRENT_TIMESTAMP(3), '%Y-%m-%d %H:%i:00'), ?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         input_tokens = input_tokens + VALUES(input_tokens),
-         output_tokens = output_tokens + VALUES(output_tokens),
-         total_tokens = total_tokens + VALUES(total_tokens)`,
-      [usage.inputTokens, usage.outputTokens, usage.totalTokens],
-    );
-    await transaction.execute(
-      `INSERT INTO competition_contestant_token_minutes
-         (minute_at, contestant_id, input_tokens, output_tokens, total_tokens)
-       VALUES (DATE_FORMAT(CURRENT_TIMESTAMP(3), '%Y-%m-%d %H:%i:00'), ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         input_tokens = input_tokens + VALUES(input_tokens),
-         output_tokens = output_tokens + VALUES(output_tokens),
-         total_tokens = total_tokens + VALUES(total_tokens)`,
-      [contestantId, usage.inputTokens, usage.outputTokens, usage.totalTokens],
-    );
-  });
-}
-
-export async function releaseContestantApiRequest(
-  contestantId: number,
-): Promise<void> {
-  await ensureCompetitionSchema();
-  await competitionPool().execute(
-    `UPDATE competition_users
-     SET api_requests_used = api_requests_used - 1
-     WHERE id = ? AND api_requests_used > 0`,
-    [contestantId],
-  );
 }
 
 export async function updateUser(input: {
@@ -464,10 +334,10 @@ export async function updateUser(input: {
   if (assignments.length === 0) return false;
   values.push(input.id);
   const [result] = await competitionPool().execute<ResultSetHeader>(
-    `UPDATE competition_users SET ${assignments.join(", ")} WHERE id = ?`,
+    `UPDATE competition_users SET ${assignments.join(", ")} WHERE id = ? AND role = 'contestant'`,
     values,
   );
-  if (input.active === false) {
+  if (input.active === false && result.affectedRows > 0) {
     await competitionPool().execute(
       "UPDATE competition_sessions SET revoked_at = CURRENT_TIMESTAMP(3) WHERE user_id = ? AND revoked_at IS NULL",
       [input.id],
@@ -481,7 +351,7 @@ export async function softDeleteUser(id: number): Promise<boolean> {
   const [result] = await competitionPool().execute<ResultSetHeader>(
     `UPDATE competition_users
      SET deleted_at = CURRENT_TIMESTAMP(3), active = FALSE
-     WHERE id = ? AND deleted_at IS NULL`,
+     WHERE id = ? AND role = 'contestant' AND deleted_at IS NULL`,
     [id],
   );
   if (result.affectedRows === 0) return false;
@@ -494,9 +364,9 @@ export async function softDeleteUser(id: number): Promise<boolean> {
 
 const questionSelect = `SELECT q.id, q.title, q.content_html, q.status, q.version,
   q.created_at, q.updated_at, q.published_at, q.closed_at,
-  u.display_name AS author_name
+  COALESCE(u.display_name, '管理员') AS author_name
   FROM competition_questions q
-  INNER JOIN competition_users u ON u.id = q.created_by`;
+  LEFT JOIN competition_users u ON u.id = q.created_by`;
 
 const activeContestantIds = `SELECT cu.id FROM competition_users cu
   WHERE cu.role = 'contestant' AND cu.active = TRUE AND cu.deleted_at IS NULL`;
@@ -508,12 +378,12 @@ const answerCountFor = (status: "submitted" | "draft") =>
 
 const judgeQuestionSelect = `SELECT q.id, q.title, q.content_html, q.status, q.version,
   q.created_at, q.updated_at, q.published_at, q.closed_at,
-  u.display_name AS author_name,
+  COALESCE(u.display_name, '管理员') AS author_name,
   (SELECT COUNT(*) FROM (${activeContestantIds}) roster) AS contestant_total,
   ${answerCountFor("submitted")} AS submitted_count,
   ${answerCountFor("draft")} AS draft_count
   FROM competition_questions q
-  INNER JOIN competition_users u ON u.id = q.created_by`;
+  LEFT JOIN competition_users u ON u.id = q.created_by`;
 
 export async function listJudgeQuestions(): Promise<JudgeQuestion[]> {
   const result = await rows<JudgeQuestionRow[]>(
@@ -549,7 +419,7 @@ export async function getQuestion(id: number): Promise<CompetitionQuestion | nul
 }
 
 export async function createQuestion(input: {
-  authorId: number;
+  authorId: number | null;
   title: string;
   contentHtml: string;
 }): Promise<number> {

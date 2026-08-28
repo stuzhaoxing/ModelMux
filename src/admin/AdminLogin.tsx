@@ -40,7 +40,7 @@ export default function AdminLogin() {
         </div>
         <div className="login-role-icon"><ShieldCheck /></div>
         <h1>管理员登录</h1>
-        <p>管理网关配置、访问策略与考核账号</p>
+        <p>管理考务、答卷、选手账号与模型网关</p>
         <form onSubmit={submit}>
           <label>管理密码<input autoFocus autoComplete="current-password" required type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
           {error && <div className="login-error" role="alert">{error}</div>}
@@ -49,7 +49,7 @@ export default function AdminLogin() {
             {pending ? "正在验证" : "进入管理后台"}
           </button>
         </form>
-        <span className="login-footnote">管理密码与评委、选手账号相互独立</span>
+        <span className="login-footnote">评委工作台已并入管理后台，无需单独账号</span>
       </section>
     </main>
   );

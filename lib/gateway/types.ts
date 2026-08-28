@@ -18,11 +18,6 @@ export type ModelTier =
   | "flagship"
   | "custom";
 export type ModelInputModality = "text" | "image" | "video";
-export type ProviderAdapter =
-  | "openai"
-  | "deepseek"
-  | "dashscope"
-  | "siliconflow";
 
 export interface ProviderRoute {
   provider: string;
@@ -30,7 +25,6 @@ export interface ProviderRoute {
   upstreamModel: string;
   apiKeyEnv: string;
   priority: number;
-  adapter?: ProviderAdapter;
   chatCompletionsPath?: string;
 }
 
@@ -68,11 +62,8 @@ export interface GatewayConfig {
   publicBaseUrl: string | null;
   internalBaseUrl: string | null;
   externalBaseUrl: string | null;
-  allowAnonymous: boolean;
   clientKeys: string[];
-  rateLimitRpm: number;
   requestTimeoutMs: number;
-  maxBodyBytes: number;
   corsOrigins: string[];
   models: ModelRouteGroup[];
 }
@@ -94,16 +85,12 @@ export interface GatewayStatus {
   startedAt: number;
   providerConfigured: boolean;
   clientAuthConfigured: boolean;
-  allowAnonymous: boolean;
-  rateLimitRpm: number;
-  maxBodyBytes: number;
   serviceEnabled: boolean;
   serviceStateUpdatedAt: string | null;
   serviceStateFileValid: boolean;
   operationMode: OperationMode;
   operationModeUpdatedAt: string | null;
   operationModeStateFileValid: boolean;
-  quotaEnforced: boolean;
   modelAliases: PublicModelRouteGroup[];
 }
 

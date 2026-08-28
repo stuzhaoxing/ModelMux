@@ -1,15 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { consumeRateLimit } from "./runtime";
+import { nextProviderKey } from "./runtime";
 
-describe("rate limit", () => {
-  it("limits each client within a rolling minute bucket", () => {
-    const client = `client-${crypto.randomUUID()}`;
-    const beganAt = 1_000;
+describe("provider key rotation", () => {
+  it("rotates through each key without changing the request path", () => {
+    const pool = `pool-${crypto.randomUUID()}`;
 
-    expect(consumeRateLimit(client, 2, beganAt).allowed).toBe(true);
-    expect(consumeRateLimit(client, 2, beganAt + 1).allowed).toBe(true);
-    expect(consumeRateLimit(client, 2, beganAt + 2).allowed).toBe(false);
-    expect(consumeRateLimit(client, 2, beganAt + 60_001).allowed).toBe(true);
+    expect(nextProviderKey(pool, ["first", "second"])).toBe("first");
+    expect(nextProviderKey(pool, ["first", "second"])).toBe("second");
+    expect(nextProviderKey(pool, ["first", "second"])).toBe("first");
   });
 });

@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { recordActivity } from "@/lib/competition/activity";
 import { cleanRichText, richTextHasContent } from "@/lib/competition/content";
-import { competitionError, parseJson, requireRole, requireSameOrigin } from "@/lib/competition/http";
+import { competitionError, parseJson, requireJudgeOperator, requireSameOrigin } from "@/lib/competition/http";
 import {
   deleteQuestionWhileStopped,
   getCompetitionControl,
@@ -24,7 +24,7 @@ function numericId(value: string): number | null {
 }
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }): Promise<NextResponse> {
-  const user = await requireRole(request, "judge");
+  const user = requireJudgeOperator(request);
   if (user instanceof NextResponse) return user;
   const id = numericId((await context.params).id);
   if (!id) return NextResponse.json({ error: "题目不存在" }, { status: 404 });
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }): Promise<NextResponse> {
   const originError = requireSameOrigin(request);
   if (originError) return originError;
-  const user = await requireRole(request, "judge");
+  const user = requireJudgeOperator(request);
   if (user instanceof NextResponse) return user;
   const id = numericId((await context.params).id);
   if (!id) return NextResponse.json({ error: "题目不存在" }, { status: 404 });
@@ -71,7 +71,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }): Promise<NextResponse> {
   const originError = requireSameOrigin(request);
   if (originError) return originError;
-  const user = await requireRole(request, "judge");
+  const user = requireJudgeOperator(request);
   if (user instanceof NextResponse) return user;
   const id = numericId((await context.params).id);
   if (!id) return NextResponse.json({ error: "题目不存在" }, { status: 404 });

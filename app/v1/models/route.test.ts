@@ -8,26 +8,31 @@ import { setGatewayServiceEnabled } from "@/lib/gateway/service-state";
 
 import { GET } from "./route";
 
+function authenticatedRequest(): Request {
+  return new Request("http://localhost:4000/v1/models", {
+    headers: { Authorization: "Bearer models-test-key" },
+  });
+}
+
 describe.sequential("public models endpoint", () => {
   let dataDirectory: string;
 
   beforeEach(async () => {
     dataDirectory = await mkdtemp(path.join(tmpdir(), "modelmux-models-test-"));
     process.env.MODELMUX_DATA_DIR = dataDirectory;
+    process.env.MODELMUX_CLIENT_KEYS = "models-test-key";
   });
 
   afterEach(async () => {
     delete process.env.MODELMUX_DATA_DIR;
-    delete process.env.MODELMUX_ALLOW_ANONYMOUS;
+    delete process.env.MODELMUX_CLIENT_KEYS;
     delete process.env.DASHSCOPE_API_KEYS;
     delete process.env.ARK_API_KEYS;
     await rm(dataDirectory, { force: true, recursive: true });
   });
 
   it("returns only exact primary-platform model IDs", async () => {
-    process.env.MODELMUX_ALLOW_ANONYMOUS = "true";
-
-    const response = await GET(new Request("http://localhost:4000/v1/models"));
+    const response = await GET(authenticatedRequest());
     const payload = (await response.json()) as {
       data: Array<{ id: string }>;
     };
@@ -43,10 +48,9 @@ describe.sequential("public models endpoint", () => {
   });
 
   it("advertises configured domestic flagship models with exact IDs", async () => {
-    process.env.MODELMUX_ALLOW_ANONYMOUS = "true";
     process.env.DASHSCOPE_API_KEYS = "dashscope-key";
 
-    const response = await GET(new Request("http://localhost:4000/v1/models"));
+    const response = await GET(authenticatedRequest());
     const payload = (await response.json()) as {
       data: Array<{ id: string }>;
     };
@@ -63,6 +67,14 @@ describe.sequential("public models endpoint", () => {
       "kimi/kimi-k3",
       "MiniMax/MiniMax-M3",
     ]);
+  });
+
+  it("rejects requests without a Bearer key", async () => {
+    const response = await GET(new Request("http://localhost:4000/v1/models"));
+    const payload = (await response.json()) as { error: { code: string } };
+
+    expect(response.status).toBe(401);
+    expect(payload.error.code).toBe("invalid_api_key");
   });
 
   it("returns the suspended error while model service is stopped", async () => {

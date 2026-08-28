@@ -14,7 +14,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   if (admin instanceof NextResponse) return admin;
 
   const role = request.nextUrl.searchParams.get("role");
-  if (role !== "judge" && role !== "contestant") {
+  if (role !== "contestant") {
     return NextResponse.json({ error: "账号角色无效" }, { status: 400 });
   }
 

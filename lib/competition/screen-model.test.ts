@@ -11,8 +11,6 @@ import {
   competitionScreenProgressCount,
   competitionScreenScheduleFromStart,
   competitionScreenStageAt,
-  competitionScreenTokenBarScales,
-  competitionMockTokenMinute,
   parseCompetitionSchedule,
 } from "./screen-model";
 
@@ -33,6 +31,7 @@ describe("competition screen model", () => {
 
   it("derives the runtime countdown duration and schedule from batch publication", () => {
     expect(competitionCountdownMinutes({ MODELMUX_COMPETITION_DURATION_MINUTES: "120" })).toBe(120);
+    expect(competitionCountdownMinutes({ MODELMUX_COMPETITION_DURATION_MINUTES: "144000" })).toBe(144000);
     expect(competitionCountdownMinutes({ MODELMUX_COMPETITION_DURATION_MINUTES: "0" })).toBe(90);
     expect(competitionCountdownMinutes({
       MODELMUX_COMPETITION_START_AT: "2026-08-21T09:00:00+08:00",
@@ -131,7 +130,7 @@ describe("competition screen model", () => {
     expect(contestants[0]).toEqual({ id: 4, name: "张三" });
   });
 
-  it("detects progress changes by stable contestant id and ignores Token-only updates", () => {
+  it("detects progress changes by stable contestant id and ignores activity-only updates", () => {
     const contestant = {
       id: 7,
       name: "甲",
@@ -139,12 +138,7 @@ describe("competition screen model", () => {
       submitted: 1,
       drafting: 1,
       notStarted: 3,
-      requestCount: 1,
-      inputTokens: 10,
-      outputTokens: 5,
-      totalTokens: 15,
-      tokenMinutes: Array<number>(90).fill(0),
-      lastActivityAt: null,
+      lastActivityAt: null as string | null,
       durationSeconds: null,
       durationKind: null,
     };
@@ -154,37 +148,17 @@ describe("competition screen model", () => {
       stage: "live",
       schedule: { configured: false, startAt: null, endAt: null },
       competition: { state: "running", durationMinutes: 90, startedAt: "2026-08-21T01:00:00.000Z", endsAt: "2026-08-21T02:30:00.000Z", stoppedAt: null },
-      summary: { contestantTotal: contestants.length, questionTotal: 5, publishedQuestions: 5, closedQuestions: 0, fullySubmitted: 0, unfinished: 0, drafting: contestants.length, notStarted: 0, requestCount: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-      tokenMinutes: Array<number>(90).fill(0),
+      summary: { contestantTotal: contestants.length, questionTotal: 5, publishedQuestions: 5, closedQuestions: 0, fullySubmitted: 0, unfinished: 0, drafting: contestants.length, notStarted: 0 },
       contestants,
       simulation: null,
     });
-    const tokenOnly = { ...contestant, totalTokens: 30 };
-    expect(competitionScreenProgressChanges(snapshot([contestant]), snapshot([tokenOnly]))).toEqual([]);
-    const progressed = { ...tokenOnly, submitted: 2 };
+    const activityOnly = { ...contestant, lastActivityAt: "2026-08-21T01:01:00.000Z" };
+    expect(competitionScreenProgressChanges(snapshot([contestant]), snapshot([activityOnly]))).toEqual([]);
+    const progressed = { ...activityOnly, submitted: 2 };
     const changes = competitionScreenProgressChanges(snapshot([contestant]), snapshot([progressed]));
     expect(changes).toHaveLength(1);
     expect(changes[0]).toMatchObject({ id: 7, index: 0, questionTotal: 5 });
     const submittedSameQuestion = { ...contestant, submitted: 2, drafting: 0 };
     expect(competitionScreenProgressChanges(snapshot([contestant]), snapshot([submittedSameQuestion]))).toEqual([]);
-  });
-
-  it("shows only recorded contestant Token minutes and keeps future buckets empty", () => {
-    expect(competitionScreenTokenBarScales({ tokenMinutes: [], maxMinuteTokens: 100 }))
-      .toEqual(Array<number>(90).fill(0));
-    const scales = competitionScreenTokenBarScales({ tokenMinutes: [0, 50, 100], maxMinuteTokens: 100 });
-    expect(scales).toHaveLength(90);
-    expect(scales.slice(0, 87)).toEqual(Array<number>(87).fill(0));
-    expect(scales.slice(-3)).toEqual([0, .5, 1]);
-  });
-
-  it("generates deterministic non-zero Token minute buckets for local previews", () => {
-    const samples = Array.from({ length: 90 }, (_, index) => competitionMockTokenMinute(index));
-    expect(samples.every((value) => value >= 6_000_000)).toBe(true);
-    expect(samples.slice(0, 6).reduce((sum, value) => sum + value, 0)).toBeGreaterThan(300_000_000);
-    expect(samples.reduce((sum, value) => sum + value, 0)).toBeGreaterThan(3_000_000_000);
-    expect(new Set(samples).size).toBeGreaterThan(12);
-    expect(competitionMockTokenMinute(10)).toBe(competitionMockTokenMinute(10));
-    expect(competitionMockTokenMinute(Number.NaN)).toBe(competitionMockTokenMinute(0));
   });
 });

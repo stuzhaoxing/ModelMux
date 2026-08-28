@@ -1,8 +1,7 @@
-import { notFound, redirect } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 
-import { isJudgeView, judgeViewRoutes, roleHomeRoutes } from "@/lib/competition/navigation";
-import { sessionUserFromCookies } from "@/lib/competition/server-session";
-import JudgeApp from "@/src/competition/JudgeApp";
+import { adminJudgeViewPaths } from "@/lib/admin/navigation";
+import { isJudgeView } from "@/lib/competition/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -13,8 +12,5 @@ export default async function JudgeViewPage({
 }) {
   const { view } = await params;
   if (!isJudgeView(view)) notFound();
-  const user = await sessionUserFromCookies();
-  if (!user) redirect(`/login?next=${encodeURIComponent(judgeViewRoutes[view])}`);
-  if (user.role !== "judge") redirect(roleHomeRoutes[user.role]);
-  return <JudgeApp user={user} />;
+  permanentRedirect(adminJudgeViewPaths[view]);
 }

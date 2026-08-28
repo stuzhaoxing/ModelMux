@@ -23,24 +23,11 @@ interface QuestionSummaryRow extends RowDataPacket {
 interface ContestantScreenRow extends RowDataPacket {
   id: number | string;
   display_name: string;
-  api_requests_used: number | string;
-  api_input_tokens_used: number | string;
-  api_output_tokens_used: number | string;
-  api_total_tokens_used: number | string;
   submitted_count: number | string;
   draft_count: number | string;
   first_activity_at: string | null;
   completed_at: string | null;
   last_activity_at: string | null;
-}
-
-interface TokenMinuteRow extends RowDataPacket {
-  minute_offset: number | string;
-  total_tokens: number | string;
-}
-
-interface ContestantTokenMinuteRow extends TokenMinuteRow {
-  contestant_id: number | string;
 }
 
 function count(value: number | string | null | undefined): number {
@@ -59,7 +46,7 @@ export async function getCompetitionScreenSnapshot(
   env: NodeJS.ProcessEnv = process.env,
   now = Date.now(),
 ): Promise<CompetitionScreenSnapshot> {
-  const [questionRows, contestantRows, tokenMinuteRows, contestantTokenMinuteRows, modeState, competition] = await Promise.all([
+  const [questionRows, contestantRows, modeState, competition] = await Promise.all([
     rows<QuestionSummaryRow[]>(
       `SELECT COUNT(*) AS question_total,
          COALESCE(SUM(status = 'published'), 0) AS published_questions,
@@ -68,8 +55,7 @@ export async function getCompetitionScreenSnapshot(
        WHERE status IN ('published', 'closed')`,
     ),
     rows<ContestantScreenRow[]>(
-      `SELECT u.id, u.display_name, u.api_requests_used,
-         u.api_input_tokens_used, u.api_output_tokens_used, u.api_total_tokens_used,
+      `SELECT u.id, u.display_name,
          COALESCE(SUM(q.id IS NOT NULL AND a.status = 'submitted'), 0) AS submitted_count,
          COALESCE(SUM(q.id IS NOT NULL AND a.status = 'draft'), 0) AS draft_count,
          MIN(CASE WHEN q.id IS NOT NULL THEN a.first_saved_at ELSE NULL END) AS first_activity_at,
@@ -80,32 +66,8 @@ export async function getCompetitionScreenSnapshot(
        LEFT JOIN competition_questions q
          ON q.id = a.question_id AND q.status IN ('published', 'closed')
        WHERE u.role = 'contestant' AND u.active = TRUE AND u.deleted_at IS NULL
-       GROUP BY u.id, u.display_name, u.api_requests_used,
-         u.api_input_tokens_used, u.api_output_tokens_used, u.api_total_tokens_used
+       GROUP BY u.id, u.display_name
        ORDER BY u.display_name, u.id`,
-    ),
-    rows<TokenMinuteRow[]>(
-      `SELECT TIMESTAMPDIFF(
-           MINUTE,
-           DATE_FORMAT(minute_at, '%Y-%m-%d %H:%i:00'),
-           DATE_FORMAT(CURRENT_TIMESTAMP(3), '%Y-%m-%d %H:%i:00')
-         ) AS minute_offset,
-         total_tokens
-       FROM competition_token_minutes
-       WHERE minute_at >= CURRENT_TIMESTAMP(3) - INTERVAL 89 MINUTE
-       ORDER BY minute_at`,
-    ),
-    rows<ContestantTokenMinuteRow[]>(
-      `SELECT contestant_id,
-         TIMESTAMPDIFF(
-           MINUTE,
-           DATE_FORMAT(minute_at, '%Y-%m-%d %H:%i:00'),
-           DATE_FORMAT(CURRENT_TIMESTAMP(3), '%Y-%m-%d %H:%i:00')
-         ) AS minute_offset,
-         total_tokens
-       FROM competition_contestant_token_minutes
-       WHERE minute_at >= CURRENT_TIMESTAMP(3) - INTERVAL 89 MINUTE
-       ORDER BY minute_at`,
     ),
     operationModeState(),
     getCompetitionControl(now),
@@ -135,15 +97,6 @@ export async function getCompetitionScreenSnapshot(
         ? Date.parse(competition.endsAt)
         : null
     : null;
-  const tokenMinutesByContestant = new Map<number, number[]>();
-  for (const row of contestantTokenMinuteRows) {
-    const offset = count(row.minute_offset);
-    if (offset > 89) continue;
-    const contestantId = count(row.contestant_id);
-    const minutes = tokenMinutesByContestant.get(contestantId) ?? Array<number>(90).fill(0);
-    minutes[89 - offset] = count(row.total_tokens);
-    tokenMinutesByContestant.set(contestantId, minutes);
-  }
   const contestants = contestantRows.map((row) => {
     const submitted = Math.min(questionTotal, count(row.submitted_count));
     const drafting = Math.min(
@@ -166,21 +119,11 @@ export async function getCompetitionScreenSnapshot(
       submitted,
       drafting,
       notStarted: Math.max(0, questionTotal - submitted - drafting),
-      requestCount: count(row.api_requests_used),
-      inputTokens: count(row.api_input_tokens_used),
-      outputTokens: count(row.api_output_tokens_used),
-      totalTokens: count(row.api_total_tokens_used),
-      tokenMinutes: tokenMinutesByContestant.get(count(row.id)) ?? Array<number>(90).fill(0),
       lastActivityAt: row.last_activity_at,
       durationSeconds: duration?.seconds ?? null,
       durationKind: duration?.kind ?? null,
     };
   });
-  const tokenMinutes = Array<number>(90).fill(0);
-  for (const row of tokenMinuteRows) {
-    const offset = count(row.minute_offset);
-    if (offset <= 89) tokenMinutes[89 - offset] = count(row.total_tokens);
-  }
   const summary = {
     contestantTotal: contestants.length,
     questionTotal,
@@ -190,10 +133,6 @@ export async function getCompetitionScreenSnapshot(
     unfinished: contestants.filter((item) => item.status === "unfinished").length,
     drafting: contestants.filter((item) => item.status === "drafting").length,
     notStarted: contestants.filter((item) => item.status === "not_started").length,
-    requestCount: contestants.reduce((sum, item) => sum + item.requestCount, 0),
-    inputTokens: contestants.reduce((sum, item) => sum + item.inputTokens, 0),
-    outputTokens: contestants.reduce((sum, item) => sum + item.outputTokens, 0),
-    totalTokens: contestants.reduce((sum, item) => sum + item.totalTokens, 0),
   };
 
   return {
@@ -203,7 +142,6 @@ export async function getCompetitionScreenSnapshot(
     schedule,
     competition,
     summary,
-    tokenMinutes,
     contestants,
     simulation: null,
   };

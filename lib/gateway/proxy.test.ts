@@ -4,14 +4,8 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  authenticateContestantApiKey,
-  recordContestantTokenUsage,
-  releaseContestantApiRequest,
-  reserveContestantApiRequest,
-} from "../competition/repository";
+import { authenticateContestantApiKey } from "../competition/repository";
 import { proxyChatCompletions } from "./proxy";
-import { setOperationMode } from "./operation-mode";
 import { setGatewayServiceEnabled } from "./service-state";
 
 vi.mock("../competition/repository", async (importOriginal) => {
@@ -19,15 +13,8 @@ vi.mock("../competition/repository", async (importOriginal) => {
   return {
     ...original,
     authenticateContestantApiKey: vi.fn(),
-    recordContestantTokenUsage: vi.fn(),
-    reserveContestantApiRequest: vi.fn(),
-    releaseContestantApiRequest: vi.fn(),
   };
 });
-
-vi.mock("../competition/activity", () => ({
-  recordActivity: vi.fn(),
-}));
 
 const ENV_KEYS = [
   "MODELMUX_ALLOW_ANONYMOUS",
@@ -72,11 +59,7 @@ describe.sequential("chat completion proxy", () => {
     process.env.DEEPSEEK_API_KEYS = "deepseek-secret";
     process.env.DASHSCOPE_API_KEYS = "dashscope-secret";
     process.env.SILICONFLOW_API_KEYS = "provider-secret";
-    process.env.MODELMUX_RATE_LIMIT_RPM = "60";
     vi.mocked(authenticateContestantApiKey).mockResolvedValue(null);
-    vi.mocked(recordContestantTokenUsage).mockResolvedValue();
-    vi.mocked(reserveContestantApiRequest).mockResolvedValue({ allowed: true, remaining: 9 });
-    vi.mocked(releaseContestantApiRequest).mockResolvedValue();
   });
 
   afterEach(async () => {
@@ -131,6 +114,25 @@ describe.sequential("chat completion proxy", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("rejects anonymous requests even when the removed setting remains in the environment", async () => {
+    process.env.MODELMUX_ALLOW_ANONYMOUS = "true";
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const original = request();
+    const response = await proxyChatCompletions(
+      new Request(original.url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: await original.text(),
+      }),
+    );
+    const payload = (await response.json()) as { error: { code: string } };
+
+    expect(response.status).toBe(401);
+    expect(payload.error.code).toBe("invalid_api_key");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("rejects models outside the competition whitelist", async () => {
     vi.stubGlobal("fetch", vi.fn());
 
@@ -162,30 +164,44 @@ describe.sequential("chat completion proxy", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("stops chunked request bodies at the configured byte limit", async () => {
+  it("forwards Base64 payloads larger than the removed gateway body limit", async () => {
     process.env.MODELMUX_MAX_BODY_BYTES = "16";
-    vi.stubGlobal("fetch", vi.fn());
-    const oversized = new Request(
+    const base64 = "A".repeat(2 * 1024 * 1024);
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const payload = JSON.parse(String(init.body)) as {
+        messages: Array<{ content: Array<{ image_url: { url: string } }> }>;
+      };
+      expect(payload.messages[0].content[0].image_url.url).toBe(
+        `data:image/png;base64,${base64}`,
+      );
+      return Response.json({ id: "large-request" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const largeRequest = new Request(
       "http://localhost:4000/v1/chat/completions",
       {
         method: "POST",
-        headers: { Authorization: "Bearer client-secret" },
-        body: new ReadableStream({
-          start(controller) {
-            controller.enqueue(new TextEncoder().encode('{"model":"deepseek-v4-pro","messages":[]}'));
-            controller.close();
-          },
+        headers: {
+          Authorization: "Bearer client-secret",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "deepseek-v4-pro",
+          messages: [{
+            role: "user",
+            content: [{
+              type: "image_url",
+              image_url: { url: `data:image/png;base64,${base64}` },
+            }],
+          }],
         }),
-        duplex: "half",
-      } as RequestInit & { duplex: "half" },
+      },
     );
 
-    const response = await proxyChatCompletions(oversized);
-    const payload = (await response.json()) as { error: { code: string } };
+    const response = await proxyChatCompletions(largeRequest);
 
-    expect(response.status).toBe(413);
-    expect(payload.error.code).toBe("request_too_large");
-    delete process.env.MODELMUX_MAX_BODY_BYTES;
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it("forwards the exact DeepSeek platform model ID without inventing parameters", async () => {
@@ -311,8 +327,12 @@ describe.sequential("chat completion proxy", () => {
     expect(response.status).toBe(200);
   });
 
-  it("rejects unofficial parameters before contacting an upstream", async () => {
-    const fetchMock = vi.fn();
+  it("forwards provider-specific parameters without local validation", async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      expect(body.enable_thinking).toBe(true);
+      return Response.json({ error: "unsupported upstream parameter" }, { status: 400 });
+    });
     vi.stubGlobal("fetch", fetchMock);
     const original = request("deepseek-v4-pro");
     const payload = await original.json() as Record<string, unknown>;
@@ -327,22 +347,30 @@ describe.sequential("chat completion proxy", () => {
     );
 
     expect(response.status).toBe(400);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
-  it("keeps DeepSeek thinking semantics on SiliconFlow failover", async () => {
+  it("only rewrites the model ID on SiliconFlow failover", async () => {
     delete process.env.DEEPSEEK_API_KEYS;
     const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       expect(body.model).toBe("Pro/deepseek-ai/DeepSeek-V3.2");
-      expect(body.enable_thinking).toBe(true);
-      expect(body.thinking).toBeUndefined();
-      expect(body.reasoning_effort).toBeUndefined();
+      expect(body.thinking).toEqual({ type: "enabled" });
+      expect(body.reasoning_effort).toBe("max");
+      expect(body.enable_thinking).toBeUndefined();
       return Response.json({ id: "siliconflow-deepseek-1" });
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const response = await proxyChatCompletions(request("deepseek-v4-pro"));
+    const original = request("deepseek-v4-pro");
+    const payload = await original.json() as Record<string, unknown>;
+    payload.thinking = { type: "enabled" };
+    payload.reasoning_effort = "max";
+    const response = await proxyChatCompletions(new Request(original.url, {
+      method: "POST",
+      headers: original.headers,
+      body: JSON.stringify(payload),
+    }));
 
     expect(response.status).toBe(200);
   });
@@ -403,125 +431,25 @@ describe.sequential("chat completion proxy", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("deducts a successful request from a contestant quota", async () => {
+  it("does not enforce legacy contestant quota or RPM settings", async () => {
     process.env.MODELMUX_DATABASE_URL = "mysql://configured-for-test";
+    process.env.MODELMUX_RATE_LIMIT_RPM = "1";
     vi.mocked(authenticateContestantApiKey).mockResolvedValue({
       id: 42,
       username: "contestant-42",
       displayName: "选手 42",
       apiKey: "sk-competition-test",
-      requestQuota: 10,
-      requestsUsed: 0,
     });
-    vi.mocked(reserveContestantApiRequest).mockResolvedValue({ allowed: true, remaining: 9 });
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
-      id: "completion-42",
-      usage: { prompt_tokens: 14, completion_tokens: 6, total_tokens: 20 },
-    })));
-
-    const response = await proxyChatCompletions(request("deepseek-v4-pro", "sk-competition-test"));
-    await response.text();
-
-    expect(response.status).toBe(200);
-    expect(response.headers.get("X-Quota-Remaining")).toBe("9");
-    expect(reserveContestantApiRequest).toHaveBeenCalledWith(42, true);
-    expect(releaseContestantApiRequest).not.toHaveBeenCalled();
-    expect(recordContestantTokenUsage).toHaveBeenCalledWith(42, {
-      inputTokens: 14,
-      outputTokens: 6,
-      totalTokens: 20,
-    });
-  });
-
-  it("rejects exhausted contestant quota before contacting a provider", async () => {
-    process.env.MODELMUX_DATABASE_URL = "mysql://configured-for-test";
-    vi.mocked(authenticateContestantApiKey).mockResolvedValue({
-      id: 42,
-      username: "contestant-42",
-      displayName: "选手 42",
-      apiKey: "sk-competition-test",
-      requestQuota: 10,
-      requestsUsed: 10,
-    });
-    vi.mocked(reserveContestantApiRequest).mockResolvedValue({ allowed: false, remaining: 0 });
-    const fetchMock = vi.fn();
+    const fetchMock = vi.fn(async () => Response.json({ id: "completion-42" }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const response = await proxyChatCompletions(request("deepseek-v4-pro", "sk-competition-test"));
-    const payload = (await response.json()) as { error: { code: string } };
+    const first = await proxyChatCompletions(request("deepseek-v4-pro", "sk-competition-test"));
+    const second = await proxyChatCompletions(request("deepseek-v4-pro", "sk-competition-test"));
 
-    expect(response.status).toBe(429);
-    expect(response.headers.get("X-Quota-Remaining")).toBe("0");
-    expect(payload.error.code).toBe("quota_exceeded");
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("stops enforcing the total quota in competition mode", async () => {
-    process.env.MODELMUX_DATABASE_URL = "mysql://configured-for-test";
-    await setOperationMode("competition");
-    vi.mocked(authenticateContestantApiKey).mockResolvedValue({
-      id: 42,
-      username: "contestant-42",
-      displayName: "选手 42",
-      apiKey: "sk-competition-test",
-      requestQuota: 10,
-      requestsUsed: 10,
-    });
-    vi.mocked(reserveContestantApiRequest).mockResolvedValue({
-      allowed: true,
-      remaining: null,
-    });
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ id: "completion-42" })));
-
-    const response = await proxyChatCompletions(request("deepseek-v4-pro", "sk-competition-test"));
-
-    expect(response.status).toBe(200);
-    expect(reserveContestantApiRequest).toHaveBeenCalledWith(42, false);
-    expect(response.headers.get("X-ModelMux-Mode")).toBe("competition");
-    expect(response.headers.get("X-Quota-Remaining")).toBeNull();
-  });
-
-  it("keeps the unlimited quota unchanged when the provider rejects the request", async () => {
-    process.env.MODELMUX_DATABASE_URL = "mysql://configured-for-test";
-    await setOperationMode("competition");
-    vi.mocked(authenticateContestantApiKey).mockResolvedValue({
-      id: 42,
-      username: "contestant-42",
-      displayName: "选手 42",
-      apiKey: "sk-competition-test",
-      requestQuota: 10,
-      requestsUsed: 10,
-    });
-    vi.mocked(reserveContestantApiRequest).mockResolvedValue({
-      allowed: true,
-      remaining: null,
-    });
-    vi.stubGlobal("fetch", vi.fn(async () => new Response("invalid", { status: 400 })));
-
-    const response = await proxyChatCompletions(request("deepseek-v4-pro", "sk-competition-test"));
-
-    expect(response.status).toBe(400);
-    expect(releaseContestantApiRequest).toHaveBeenCalledWith(42);
-    expect(response.headers.get("X-Quota-Remaining")).toBeNull();
-  });
-
-  it("refunds a contestant reservation when the provider rejects the request", async () => {
-    process.env.MODELMUX_DATABASE_URL = "mysql://configured-for-test";
-    vi.mocked(authenticateContestantApiKey).mockResolvedValue({
-      id: 42,
-      username: "contestant-42",
-      displayName: "选手 42",
-      apiKey: "sk-competition-test",
-      requestQuota: 10,
-      requestsUsed: 0,
-    });
-    vi.mocked(reserveContestantApiRequest).mockResolvedValue({ allowed: true, remaining: 9 });
-    vi.stubGlobal("fetch", vi.fn(async () => new Response("invalid", { status: 400 })));
-
-    const response = await proxyChatCompletions(request("deepseek-v4-pro", "sk-competition-test"));
-
-    expect(response.status).toBe(400);
-    expect(response.headers.get("X-Quota-Remaining")).toBe("10");
-    expect(releaseContestantApiRequest).toHaveBeenCalledWith(42);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(first.headers.get("X-Quota-Remaining")).toBeNull();
+    expect(first.headers.get("X-RateLimit-Remaining")).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

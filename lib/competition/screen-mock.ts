@@ -1,5 +1,4 @@
 import {
-  competitionMockTokenMinute,
   competitionScreenContestantStatus,
   competitionScreenDisplayStatus,
   type CompetitionScreenContestant,
@@ -42,27 +41,6 @@ export function buildCompetitionScreenMockSnapshot(
       ? 96 + (index % 3) * 4
       : 62 + ((index * 7) % 25),
   }));
-  const contestantTokenMinutes = base.contestants.map(() => Array<number>(competitionScreenMockTotalMinutes).fill(0));
-  const tokenMinutes = Array<number>(competitionScreenMockTotalMinutes).fill(0);
-  for (let minute = 0; minute < elapsedMinutes; minute += 1) {
-    const activeIndexes = workPlans.flatMap((plan, index) => (
-      minute >= plan.startsAt && minute < plan.finishesAt ? [index] : []
-    ));
-    if (activeIndexes.length === 0) continue;
-    const minuteTotal = competitionMockTokenMinute(minute);
-    const weights = activeIndexes.map((index) => 1 + ((index + minute) % 5) * .15);
-    const weightTotal = weights.reduce((sum, value) => sum + value, 0);
-    let allocated = 0;
-    activeIndexes.forEach((contestantIndex, activeIndex) => {
-      const share = activeIndex === activeIndexes.length - 1
-        ? minuteTotal - allocated
-        : Math.floor((minuteTotal * weights[activeIndex]) / weightTotal);
-      contestantTokenMinutes[contestantIndex][minute] = share;
-      allocated += share;
-    });
-    tokenMinutes[minute] = allocated;
-  }
-  const totalTokens = tokenMinutes.reduce((sum, value) => sum + value, 0);
   const contestants: CompetitionScreenContestant[] = base.contestants.map((contestant, index) => {
     const workStartsAt = workPlans[index].startsAt;
     const workFinishesAt = workPlans[index].finishesAt;
@@ -73,11 +51,6 @@ export function buildCompetitionScreenMockSnapshot(
       ? questionTotal
       : Math.min(questionTotal, Math.floor(progress * questionTotal));
     const drafting = elapsedMinutes > workStartsAt && submitted < questionTotal ? 1 : 0;
-    const requestCount = elapsedMinutes <= workStartsAt
-      ? 0
-      : Math.floor((elapsedMinutes - workStartsAt) * (1 + (index % 4) * .35));
-    const minuteTokens = contestantTokenMinutes[index];
-    const contestantTokens = minuteTokens.reduce((sum, value) => sum + value, 0);
     const progressStatus = competitionScreenContestantStatus({ questionTotal, submitted, drafting });
     const status = competitionScreenDisplayStatus({
       status: progressStatus,
@@ -90,11 +63,6 @@ export function buildCompetitionScreenMockSnapshot(
       submitted,
       drafting,
       notStarted: Math.max(0, questionTotal - submitted - drafting),
-      requestCount,
-      inputTokens: Math.floor(contestantTokens * .68),
-      outputTokens: contestantTokens - Math.floor(contestantTokens * .68),
-      totalTokens: contestantTokens,
-      tokenMinutes: minuteTokens,
       lastActivityAt: elapsedMinutes > workStartsAt ? new Date(now).toISOString() : null,
       durationSeconds: status === "submitted"
         ? workFinishesAt * 60
@@ -132,12 +100,7 @@ export function buildCompetitionScreenMockSnapshot(
       unfinished,
       drafting,
       notStarted,
-      requestCount: contestants.reduce((sum, item) => sum + item.requestCount, 0),
-      inputTokens: Math.floor(totalTokens * .68),
-      outputTokens: totalTokens - Math.floor(totalTokens * .68),
-      totalTokens,
     },
-    tokenMinutes,
     contestants,
     simulation: {
       startedAt: new Date(startedAt).toISOString(),
