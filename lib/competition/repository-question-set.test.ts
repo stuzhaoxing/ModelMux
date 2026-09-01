@@ -31,6 +31,7 @@ import {
   saveAnswer,
   startCompetition,
   stopCompetition,
+  updateQuestion,
 } from "./repository";
 
 describe("competition question set publishing", () => {
@@ -84,20 +85,36 @@ describe("competition question set publishing", () => {
     expect(mocks.insertCompetitionEvent).toHaveBeenCalledTimes(2);
   });
 
-  it("refuses to append a new question after the set is released", async () => {
+  it("allows appending a new question after the competition has stopped", async () => {
+    mocks.connection.execute
+      .mockResolvedValueOnce([[
+        { status: "ended", duration_minutes: 60, started_at: "2026-08-25 16:00:00.000", ends_at: "2026-08-25 16:20:00.000", stopped_at: "2026-08-25 16:20:00.000", active: 0 },
+      ]])
+      .mockResolvedValueOnce([{ insertId: 13 }]);
+
+    await expect(createQuestion({ authorId: 9, title: "追加题", contentHtml: "<p>内容</p>" }))
+      .resolves.toBe(13);
+    expect(String(mocks.connection.execute.mock.calls[0][0])).toContain("competition_control");
+    expect(String(mocks.connection.execute.mock.calls[0][0])).toContain("FOR UPDATE");
+    expect(mocks.connection.commit).toHaveBeenCalledOnce();
+  });
+
+  it("refuses to append a new question while the competition is running", async () => {
     mocks.connection.execute.mockResolvedValueOnce([[
-      { id: 1, title: "第一题", status: "published" },
+      { status: "running", duration_minutes: 60, started_at: "2026-08-25 16:00:00.000", ends_at: "2026-08-25 17:00:00.000", stopped_at: null, active: 1 },
     ]]);
 
     await expect(createQuestion({ authorId: 9, title: "追加题", contentHtml: "<p>内容</p>" }))
-      .rejects.toThrow("question_set_published");
+      .rejects.toThrow("competition_running");
     expect(mocks.connection.execute).toHaveBeenCalledOnce();
     expect(mocks.connection.rollback).toHaveBeenCalledOnce();
   });
 
   it("creates an admin-authored question without a competition user", async () => {
     mocks.connection.execute
-      .mockResolvedValueOnce([[]])
+      .mockResolvedValueOnce([[
+        { status: "not_started", duration_minutes: 90, started_at: null, ends_at: null, stopped_at: null, active: 0 },
+      ]])
       .mockResolvedValueOnce([{ insertId: 12 }]);
 
     await expect(createQuestion({
@@ -116,6 +133,43 @@ describe("competition question set publishing", () => {
       { type: "question-updated", questionId: 12 },
     );
     expect(mocks.connection.commit).toHaveBeenCalledOnce();
+  });
+
+  it("allows updating a published question after the competition has stopped", async () => {
+    mocks.connection.execute
+      .mockResolvedValueOnce([[
+        { status: "ended", duration_minutes: 60, started_at: "2026-08-25 16:00:00.000", ends_at: "2026-08-25 16:20:00.000", stopped_at: "2026-08-25 16:20:00.000", active: 0 },
+      ]])
+      .mockResolvedValueOnce([{ affectedRows: 1 }]);
+
+    await expect(updateQuestion({
+      id: 5,
+      title: "赛后修改",
+      contentHtml: "<p>新内容</p>",
+      expectedVersion: 2,
+    })).resolves.toBe(true);
+    expect(String(mocks.connection.execute.mock.calls[1][0])).not.toContain("status = 'draft'");
+    expect(mocks.insertCompetitionEvent).toHaveBeenCalledWith(
+      mocks.connection,
+      { type: "question-updated", questionId: 5 },
+    );
+    expect(mocks.connection.commit).toHaveBeenCalledOnce();
+  });
+
+  it("refuses to update a question while the competition is running", async () => {
+    mocks.connection.execute.mockResolvedValueOnce([[
+      { status: "running", duration_minutes: 60, started_at: "2026-08-25 16:00:00.000", ends_at: "2026-08-25 17:00:00.000", stopped_at: null, active: 1 },
+    ]]);
+
+    await expect(updateQuestion({
+      id: 5,
+      title: "比赛中修改",
+      contentHtml: "<p>内容</p>",
+      expectedVersion: 2,
+    })).rejects.toThrow("competition_running");
+    expect(mocks.connection.execute).toHaveBeenCalledOnce();
+    expect(mocks.connection.rollback).toHaveBeenCalledOnce();
+    expect(mocks.connection.commit).not.toHaveBeenCalled();
   });
 
   it("deletes a question and its answers before the competition starts", async () => {

@@ -3,7 +3,7 @@ import type { RowDataPacket } from "mysql2";
 import { operationModeState } from "@/lib/gateway/operation-mode";
 
 import { rows } from "./db";
-import { getCompetitionControl } from "./repository";
+import { getCompetitionControl, getCompetitionScreenNotice } from "./repository";
 import {
   competitionCountdownMinutes,
   competitionScreenContestantStatus,
@@ -30,6 +30,15 @@ interface ContestantScreenRow extends RowDataPacket {
   last_activity_at: string | null;
 }
 
+interface TokenMinuteRow extends RowDataPacket {
+  minute_at: string;
+  total_tokens: number | string;
+}
+
+interface TokenTotalRow extends RowDataPacket {
+  total_tokens: number | string;
+}
+
 function count(value: number | string | null | undefined): number {
   const parsed = Number(value ?? 0);
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0;
@@ -46,7 +55,25 @@ export async function getCompetitionScreenSnapshot(
   env: NodeJS.ProcessEnv = process.env,
   now = Date.now(),
 ): Promise<CompetitionScreenSnapshot> {
-  const [questionRows, contestantRows, modeState, competition] = await Promise.all([
+  const [modeState, competition, notice] = await Promise.all([
+    operationModeState(),
+    getCompetitionControl(now),
+    getCompetitionScreenNotice(),
+  ]);
+  const usageStartedAt = competition.startedAt ? Date.parse(competition.startedAt) : null;
+  const usageStoppedAt = competition.stoppedAt
+    ? Date.parse(competition.stoppedAt)
+    : competition.endsAt
+      ? Math.min(now, Date.parse(competition.endsAt))
+      : now;
+  const usageQueryValues = usageStartedAt === null || !Number.isFinite(usageStoppedAt)
+    ? null
+    : [Math.floor(usageStartedAt / 1_000), Math.floor(usageStoppedAt / 1_000)];
+  const recentUsageStartedAt = Math.max(
+    usageStartedAt ?? usageStoppedAt,
+    usageStoppedAt - 89 * 60_000,
+  );
+  const [questionRows, contestantRows, tokenTotalRows, tokenMinuteRows] = await Promise.all([
     rows<QuestionSummaryRow[]>(
       `SELECT COUNT(*) AS question_total,
          COALESCE(SUM(status = 'published'), 0) AS published_questions,
@@ -69,8 +96,25 @@ export async function getCompetitionScreenSnapshot(
        GROUP BY u.id, u.display_name
        ORDER BY u.display_name, u.id`,
     ),
-    operationModeState(),
-    getCompetitionControl(now),
+    usageQueryValues === null
+      ? Promise.resolve([] as TokenTotalRow[])
+      : rows<TokenTotalRow[]>(
+          `SELECT COALESCE(SUM(total_tokens), 0) AS total_tokens
+           FROM competition_token_minutes
+           WHERE minute_at >= FROM_UNIXTIME(?)
+             AND minute_at <= FROM_UNIXTIME(?)`,
+          usageQueryValues,
+        ),
+    usageQueryValues === null
+      ? Promise.resolve([] as TokenMinuteRow[])
+      : rows<TokenMinuteRow[]>(
+          `SELECT minute_at, total_tokens
+           FROM competition_token_minutes
+           WHERE minute_at >= FROM_UNIXTIME(?)
+             AND minute_at <= FROM_UNIXTIME(?)
+           ORDER BY minute_at`,
+          [Math.floor(recentUsageStartedAt / 1_000), Math.floor(usageStoppedAt / 1_000)],
+        ),
   ]);
 
   const questionRow = questionRows[0];
@@ -124,6 +168,18 @@ export async function getCompetitionScreenSnapshot(
       durationKind: duration?.kind ?? null,
     };
   });
+  const tokenMinutes = Array<number>(90).fill(0);
+  const referenceMinute = Math.floor(usageStoppedAt / 60_000);
+  const totalTokens = count(tokenTotalRows[0]?.total_tokens);
+  for (const row of tokenMinuteRows) {
+    const minuteTokens = count(row.total_tokens);
+    const minuteAt = competitionTimestamp(row.minute_at);
+    if (minuteAt === null) continue;
+    const offset = referenceMinute - Math.floor(minuteAt / 60_000);
+    if (offset >= 0 && offset < tokenMinutes.length) {
+      tokenMinutes[tokenMinutes.length - 1 - offset] = minuteTokens;
+    }
+  }
   const summary = {
     contestantTotal: contestants.length,
     questionTotal,
@@ -133,6 +189,7 @@ export async function getCompetitionScreenSnapshot(
     unfinished: contestants.filter((item) => item.status === "unfinished").length,
     drafting: contestants.filter((item) => item.status === "drafting").length,
     notStarted: contestants.filter((item) => item.status === "not_started").length,
+    totalTokens,
   };
 
   return {
@@ -141,7 +198,9 @@ export async function getCompetitionScreenSnapshot(
     stage: screenStage,
     schedule,
     competition,
+    notice,
     summary,
+    tokenMinutes,
     contestants,
     simulation: null,
   };

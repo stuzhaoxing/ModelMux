@@ -51,6 +51,23 @@ describe("judge answer export", () => {
     expect(JSON.stringify(blocks)).not.toContain("原始数据.pdf\"}");
   });
 
+  it("exports attachments whose download action is limited to the button", () => {
+    const blocks = parseExportBlocks(
+      '<div class="rich-attachment" data-attachment-id="43" data-attachment-name="监测视频.mp4" data-attachment-size="20552090" data-attachment-type="video/mp4"><span class="attachment-type">MP4</span><span class="attachment-details"><strong>监测视频.mp4</strong><small>19.6 MB</small></span><a class="attachment-download" href="/api/competition/media/43" download="监测视频.mp4">下载</a></div>',
+    );
+
+    expect(blocks).toContainEqual({
+      kind: "paragraph",
+      inlines: [{
+        kind: "attachment",
+        mediaId: 43,
+        name: "监测视频.mp4",
+        byteSize: 20552090,
+        mimeType: "video/mp4",
+      }],
+    });
+  });
+
   it("reads stored image ids from image src attributes", () => {
     expect(parseExportBlocks(submittedAnswer.contentHtml)).toContainEqual({
       kind: "image",

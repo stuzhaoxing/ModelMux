@@ -49,7 +49,8 @@ button {
 }
 
 button:focus-visible,
-.nav-item:focus-visible {
+.nav-item:focus-visible,
+.nav-subitem:focus-visible {
   outline: 2px solid #245f9e;
   outline-offset: 2px;
 }
@@ -166,10 +167,114 @@ button:focus-visible,
   border-color: #3c444a;
 }
 
+.nav-item.current-group {
+  color: #f4f6f5;
+}
+
+.nav-item.current-group svg {
+  color: #9eb9aa;
+}
+
 .nav-item span {
   overflow: hidden;
   font-size: 16px;
   font-weight: 550;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.nav-group {
+  display: grid;
+  gap: 4px;
+}
+
+.nav-submenu {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  margin: 0 0 4px 21px;
+  padding: 3px 0 3px 24px;
+}
+
+.nav-submenu::before {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 8px;
+  width: 1px;
+  background: #3a4449;
+  content: "";
+}
+
+.nav-subitem {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  height: 36px;
+  padding: 0 11px;
+  color: #929ca3;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  text-decoration: none;
+  transition:
+    color 140ms ease,
+    background 140ms ease;
+}
+
+.nav-subitem::before {
+  position: absolute;
+  top: 50%;
+  left: -19px;
+  width: 6px;
+  height: 6px;
+  background: #566168;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px #202428;
+  content: "";
+  transform: translateY(-50%);
+  transition:
+    background 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.nav-subitem:hover {
+  color: #f1f4f5;
+  background: rgb(255 255 255 / 4%);
+}
+
+.nav-subitem:hover::before {
+  background: #7d8b83;
+}
+
+.nav-subitem.active {
+  color: #ffffff;
+  background: rgb(113 154 134 / 13%);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.nav-subitem.active::before {
+  background: #8db09e;
+  box-shadow:
+    0 0 0 3px #202428,
+    0 0 0 4px rgb(141 176 158 / 30%);
+}
+
+.nav-subitem svg {
+  flex: 0 0 auto;
+}
+
+.nav-subitem.active svg {
+  color: #a8c3b5;
+}
+
+.nav-subitem span {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 560;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -317,6 +422,10 @@ button:focus-visible,
 }
 
 .page-content.judge-page-content {
+  padding: 0;
+}
+
+.page-content.activity-page-content {
   padding: 0;
 }
 
@@ -1420,32 +1529,12 @@ button:focus-visible,
 }
 
 @media (max-width: 1300px) {
-  .judge-page-content .admin-judge-workspace,
-  .judge-page-content .admin-judge-workspace.log-collapsed {
+  .judge-page-content .admin-judge-workspace {
     grid-template-columns: 250px minmax(0, 1fr);
   }
 
-  .judge-page-content .admin-judge-workspace.dashboard-view,
-  .judge-page-content .admin-judge-workspace.dashboard-view.log-collapsed {
+  .judge-page-content .admin-judge-workspace.dashboard-view {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .judge-page-content .activity-log {
-    grid-column: 1 / -1;
-    max-height: 340px;
-    border-top: 1px solid #d6dce0;
-    border-left: 0;
-  }
-
-  .judge-page-content .activity-log.collapsed {
-    align-items: stretch;
-    max-height: none;
-    padding: 10px 14px;
-  }
-
-  .judge-page-content .activity-log.collapsed .activity-toggle {
-    padding: 9px 10px;
-    writing-mode: horizontal-tb;
   }
 }
 
@@ -1466,6 +1555,7 @@ button:focus-visible,
 
   .brand-block > div:last-child,
   .nav-item span,
+  .nav-subitem span,
   .sidebar-status div {
     display: none;
   }
@@ -1480,6 +1570,26 @@ button:focus-visible,
 
   .nav-item {
     justify-content: center;
+    padding: 0;
+  }
+
+  .nav-group {
+    gap: 2px;
+  }
+
+  .nav-submenu {
+    margin: 0;
+    padding: 0;
+  }
+
+  .nav-submenu::before,
+  .nav-subitem::before {
+    display: none;
+  }
+
+  .nav-subitem {
+    justify-content: center;
+    height: 38px;
     padding: 0;
   }
 
@@ -1574,6 +1684,14 @@ button:focus-visible,
     margin: 0;
   }
 
+  .nav-group {
+    display: block;
+  }
+
+  .nav-submenu {
+    display: none;
+  }
+
   .nav-item {
     width: 40px;
     height: 40px;
@@ -1617,6 +1735,10 @@ button:focus-visible,
   }
 
   .page-content.judge-page-content {
+    padding: 0;
+  }
+
+  .page-content.activity-page-content {
     padding: 0;
   }
 
@@ -1757,6 +1879,10 @@ button:focus-visible,
   }
 
   .nav-item {
+    width: 34px;
+  }
+
+  .nav-group > .nav-item {
     width: 34px;
   }
 

@@ -4,7 +4,10 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { authenticateContestantApiKey } from "../competition/repository";
+import {
+  authenticateContestantApiKey,
+  recordCompetitionTokenUsage,
+} from "../competition/repository";
 import { proxyChatCompletions } from "./proxy";
 import { setGatewayServiceEnabled } from "./service-state";
 
@@ -13,6 +16,7 @@ vi.mock("../competition/repository", async (importOriginal) => {
   return {
     ...original,
     authenticateContestantApiKey: vi.fn(),
+    recordCompetitionTokenUsage: vi.fn(),
   };
 });
 
@@ -60,6 +64,7 @@ describe.sequential("chat completion proxy", () => {
     process.env.DASHSCOPE_API_KEYS = "dashscope-secret";
     process.env.SILICONFLOW_API_KEYS = "provider-secret";
     vi.mocked(authenticateContestantApiKey).mockResolvedValue(null);
+    vi.mocked(recordCompetitionTokenUsage).mockResolvedValue(undefined);
   });
 
   afterEach(async () => {
@@ -451,5 +456,40 @@ describe.sequential("chat completion proxy", () => {
     expect(first.headers.get("X-Quota-Remaining")).toBeNull();
     expect(first.headers.get("X-RateLimit-Remaining")).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("requests streaming usage and records aggregate Token totals for contestants", async () => {
+    process.env.MODELMUX_DATABASE_URL = "mysql://configured-for-test";
+    vi.mocked(authenticateContestantApiKey).mockResolvedValue({
+      id: 42,
+      username: "contestant-42",
+      displayName: "选手 42",
+      apiKey: "sk-competition-test",
+    });
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      expect(body.stream_options).toEqual({ include_usage: true });
+      return new Response([
+        'data: {"choices":[{"delta":{"content":"好"}}]}',
+        'data: {"choices":[],"usage":{"prompt_tokens":31,"completion_tokens":11,"total_tokens":42}}',
+        "data: [DONE]",
+        "",
+      ].join("\n\n"), {
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await proxyChatCompletions(
+      request("deepseek-v4-pro", "sk-competition-test", true),
+    );
+    await response.text();
+
+    expect(response.status).toBe(200);
+    expect(recordCompetitionTokenUsage).toHaveBeenCalledWith({
+      inputTokens: 31,
+      outputTokens: 11,
+      totalTokens: 42,
+    });
   });
 });

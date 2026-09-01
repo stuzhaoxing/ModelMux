@@ -1,4 +1,5 @@
 import {
+  competitionMockTokenMinute,
   competitionScreenContestantStatus,
   competitionScreenDisplayStatus,
   type CompetitionScreenContestant,
@@ -41,6 +42,11 @@ export function buildCompetitionScreenMockSnapshot(
       ? 96 + (index % 3) * 4
       : 62 + ((index * 7) % 25),
   }));
+  const tokenMinutes = Array<number>(competitionScreenMockTotalMinutes).fill(0);
+  for (let minute = 0; minute < elapsedMinutes; minute += 1) {
+    tokenMinutes[minute] = competitionMockTokenMinute(minute);
+  }
+  const totalTokens = tokenMinutes.reduce((sum, value) => sum + value, 0);
   const contestants: CompetitionScreenContestant[] = base.contestants.map((contestant, index) => {
     const workStartsAt = workPlans[index].startsAt;
     const workFinishesAt = workPlans[index].finishesAt;
@@ -100,7 +106,9 @@ export function buildCompetitionScreenMockSnapshot(
       unfinished,
       drafting,
       notStarted,
+      totalTokens,
     },
+    tokenMinutes,
     contestants,
     simulation: {
       startedAt: new Date(startedAt).toISOString(),

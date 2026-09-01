@@ -44,3 +44,9 @@ export function competitionRemainingSeconds(control: CompetitionControl, now = D
   if (control.state !== "running" || !control.endsAt) return 0;
   return Math.max(0, Math.floor((Date.parse(control.endsAt) - now) / 1_000));
 }
+
+export function competitionAllowsQuestionManagement(
+  state: CompetitionControl["state"],
+): boolean {
+  return state !== "running";
+}

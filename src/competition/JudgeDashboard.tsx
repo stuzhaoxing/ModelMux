@@ -7,7 +7,6 @@ import {
   CircleStop,
   Download,
   FileEdit,
-  FilePlus2,
   LoaderCircle,
   Send,
   TimerReset,
@@ -22,6 +21,7 @@ import {
 import { competitionRemainingSeconds } from "@/lib/competition/control";
 import type { CompetitionControl, JudgeQuestion } from "@/lib/competition/types";
 import { formatCompetitionTime } from "./api";
+import { ScreenNoticeEditor } from "./ScreenNoticeEditor";
 
 export function JudgeDashboard({
   questions,
@@ -29,8 +29,8 @@ export function JudgeDashboard({
   competition,
   durationInput,
   competitionPending,
-  canCreateQuestions,
   onOpenQuestion,
+  onManageQuestions,
   onCreateQuestion,
   onDurationChange,
   onStartCompetition,
@@ -42,8 +42,8 @@ export function JudgeDashboard({
   competition: CompetitionControl;
   durationInput: string;
   competitionPending: boolean;
-  canCreateQuestions: boolean;
   onOpenQuestion: (question: JudgeQuestion) => void;
+  onManageQuestions: () => void;
   onCreateQuestion: () => void;
   onDurationChange: (value: string) => void;
   onStartCompetition: () => void;
@@ -114,23 +114,6 @@ export function JudgeDashboard({
 
   return (
     <div className="judge-dashboard">
-      <header className="dashboard-heading">
-        <div>
-          <span>考务总览</span>
-          <h1>题目发布与答题概览</h1>
-        </div>
-        <button type="button" className="primary-action" disabled={!canCreateQuestions} title={canCreateQuestions ? "新建题目" : "题目已统一发布"} onClick={onCreateQuestion}>
-          <FilePlus2 />新建题目
-        </button>
-      </header>
-
-      <section className="dashboard-status-grid" aria-label="题目发布概览">
-        <DashboardStat label="全部题目" value={summary.questions.total} icon={<FileEdit />} />
-        <DashboardStat label="当前开放" value={running ? summary.questions.total : 0} icon={<Send />} tone="published" />
-        <DashboardStat label="已提交答卷" value={summary.answers.submitted} icon={<CheckCircle2 />} tone="published" />
-        <DashboardStat label="待完成答卷" value={summary.answers.drafting + summary.answers.notStarted} icon={<Circle />} tone="draft" />
-      </section>
-
       <section className={`dashboard-publish-panel ${running ? "started" : "ready"}`}>
         <span className="dashboard-publish-icon">{running ? <TimerReset /> : ended ? <CircleStop /> : <CheckCircle2 />}</span>
         <div className="dashboard-publish-copy">
@@ -178,10 +161,17 @@ export function JudgeDashboard({
         )}
       </section>
 
+      <ScreenNoticeEditor competitionState={competition.state} />
+
       <section className="dashboard-panel dashboard-answer-overview">
         <div className="dashboard-panel-heading">
           <div><span>ANSWER OVERVIEW</span><h2>全部题目答题概览</h2></div>
-          <small>{summary.answers.questionCount} 道题目已有答题记录</small>
+          <div className="dashboard-panel-heading-actions">
+            <small>{summary.answers.questionCount} 道题目已有答题记录</small>
+            <button type="button" className="primary-action" title="进入题目管理" onClick={onManageQuestions}>
+              <FileEdit />题目管理
+            </button>
+          </div>
         </div>
         <div className="dashboard-answer-body">
           <div className="dashboard-completion">
@@ -276,20 +266,6 @@ export function JudgeDashboard({
       </section>
     </div>
   );
-}
-
-function DashboardStat({
-  label,
-  value,
-  icon,
-  tone = "neutral",
-}: {
-  label: string;
-  value: number;
-  icon: React.ReactNode;
-  tone?: "neutral" | "published" | "closed" | "draft";
-}) {
-  return <div className={`dashboard-stat ${tone}`}><span>{icon}{label}</span><strong>{value}</strong></div>;
 }
 
 function AnswerCount({

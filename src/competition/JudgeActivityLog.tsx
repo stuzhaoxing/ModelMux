@@ -54,8 +54,6 @@ export function JudgeActivityLog({
   loadingOlder,
   hasOlder,
   onLoadOlder,
-  collapsed,
-  onToggleCollapsed,
 }: {
   entries: ActivityEntry[];
   total: number;
@@ -64,8 +62,6 @@ export function JudgeActivityLog({
   loadingOlder: boolean;
   hasOlder: boolean;
   onLoadOlder: () => void;
-  collapsed: boolean;
-  onToggleCollapsed: () => void;
 }) {
   const [filter, setFilter] = useState<LogFilter>("all");
   const visible = useMemo(
@@ -73,26 +69,17 @@ export function JudgeActivityLog({
     [entries, filter],
   );
 
-  if (collapsed) {
-    return (
-      <aside className="activity-log collapsed">
-        <button type="button" className="activity-toggle" onClick={onToggleCollapsed}>
-          展开现场日志（{total} 条）
-        </button>
-      </aside>
-    );
-  }
-
   return (
-    <aside className="activity-log" aria-label="现场日志">
+    <section className="activity-log" aria-label="现场日志">
       <div className="activity-heading">
         <span>
           <small>现场日志</small>
           <strong>累计 {total} 条记录</strong>
         </span>
-        <button type="button" className="activity-toggle" onClick={onToggleCollapsed}>
-          收起日志
-        </button>
+        <span className={`activity-connection ${online ? "online" : "offline"}`}>
+          <i aria-hidden="true" />
+          {online ? "实时连接" : "正在重连"}
+        </span>
       </div>
       <p className="activity-hint">
         {online ? "实时刷新中，最新的记录排在最上面" : "实时通道已断开，正在重连"}
@@ -147,6 +134,6 @@ export function JudgeActivityLog({
               : "当前筛选下没有记录"}
         </div>
       )}
-    </aside>
+    </section>
   );
 }

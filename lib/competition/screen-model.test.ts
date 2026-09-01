@@ -7,10 +7,13 @@ import {
   competitionScreenDisplayStatus,
   competitionScreenDuration,
   competitionScreenGrid,
+  competitionScreenNoticeVisible,
   competitionScreenProgressChanges,
   competitionScreenProgressCount,
   competitionScreenScheduleFromStart,
   competitionScreenStageAt,
+  competitionScreenTokenBarScales,
+  competitionMockTokenMinute,
   parseCompetitionSchedule,
 } from "./screen-model";
 
@@ -148,7 +151,9 @@ describe("competition screen model", () => {
       stage: "live",
       schedule: { configured: false, startAt: null, endAt: null },
       competition: { state: "running", durationMinutes: 90, startedAt: "2026-08-21T01:00:00.000Z", endsAt: "2026-08-21T02:30:00.000Z", stoppedAt: null },
-      summary: { contestantTotal: contestants.length, questionTotal: 5, publishedQuestions: 5, closedQuestions: 0, fullySubmitted: 0, unfinished: 0, drafting: contestants.length, notStarted: 0 },
+      notice: { title: "赛前提醒", content: "", enabled: false, updatedAt: null },
+      summary: { contestantTotal: contestants.length, questionTotal: 5, publishedQuestions: 5, closedQuestions: 0, fullySubmitted: 0, unfinished: 0, drafting: contestants.length, notStarted: 0, totalTokens: 0 },
+      tokenMinutes: Array<number>(90).fill(0),
       contestants,
       simulation: null,
     });
@@ -160,5 +165,37 @@ describe("competition screen model", () => {
     expect(changes[0]).toMatchObject({ id: 7, index: 0, questionTotal: 5 });
     const submittedSameQuestion = { ...contestant, submitted: 2, drafting: 0 };
     expect(competitionScreenProgressChanges(snapshot([contestant]), snapshot([submittedSameQuestion]))).toEqual([]);
+  });
+
+  it("normalizes the latest Token buckets for the bottom chart", () => {
+    expect(competitionScreenTokenBarScales({ tokenMinutes: [], maxMinuteTokens: 100 }))
+      .toEqual(Array<number>(90).fill(0));
+    const scales = competitionScreenTokenBarScales({
+      tokenMinutes: [0, 50, 100],
+      maxMinuteTokens: 100,
+    });
+    expect(scales.slice(-3)).toEqual([0, .5, 1]);
+  });
+
+  it("shows the public notice only before the competition starts", () => {
+    const notice = { title: "接口信息", content: "http://10.0.0.8:1444/v1", enabled: true, updatedAt: null };
+    expect(competitionScreenNoticeVisible({ competitionState: "not_started", notice })).toBe(true);
+    expect(competitionScreenNoticeVisible({ competitionState: "running", notice })).toBe(false);
+    expect(competitionScreenNoticeVisible({ competitionState: "ended", notice })).toBe(false);
+    expect(competitionScreenNoticeVisible({
+      competitionState: "not_started",
+      notice: { ...notice, content: "   " },
+    })).toBe(false);
+    expect(competitionScreenNoticeVisible({
+      competitionState: "not_started",
+      notice: { ...notice, enabled: false },
+    })).toBe(false);
+  });
+
+  it("generates deterministic Token buckets for the accelerated preview", () => {
+    const samples = Array.from({ length: 90 }, (_, index) => competitionMockTokenMinute(index));
+    expect(samples.every((value) => value >= 6_000_000)).toBe(true);
+    expect(new Set(samples).size).toBeGreaterThan(12);
+    expect(competitionMockTokenMinute(10)).toBe(competitionMockTokenMinute(10));
   });
 });

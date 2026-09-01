@@ -3,6 +3,7 @@ export const adminViewPaths = {
   competition: "/admin/competition",
   questions: "/admin/questions",
   answers: "/admin/answers",
+  activity: "/admin/activity",
   accounts: "/admin/accounts",
   models: "/admin/models",
   logs: "/admin/logs",
@@ -22,6 +23,7 @@ const routedAdminViewIds = [
   "competition",
   "questions",
   "answers",
+  "activity",
   "accounts",
   "models",
   "logs",
@@ -42,6 +44,10 @@ export function adminViewFromPathname(pathname: string): AdminViewId {
 
 export function isAdminJudgeViewId(view: AdminViewId): boolean {
   return view === "competition" || view === "questions" || view === "answers";
+}
+
+export function isAdminQuestionManagementViewId(view: AdminViewId): boolean {
+  return view === "questions" || view === "answers";
 }
 
 export function adminJudgeViewFromPathname(pathname: string): AdminJudgeView {

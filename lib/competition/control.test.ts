@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { competitionControlFromStored, competitionRemainingSeconds } from "./control";
+import {
+  competitionAllowsQuestionManagement,
+  competitionControlFromStored,
+  competitionRemainingSeconds,
+} from "./control";
 
 describe("competition control", () => {
   it("derives not-started, running and naturally-ended states", () => {
@@ -45,5 +49,11 @@ describe("competition control", () => {
       endsAt: "2026-08-25T08:20:00.000Z",
       stoppedAt: "2026-08-25T08:20:00.000Z",
     });
+  });
+
+  it("allows question management before start and after stop only", () => {
+    expect(competitionAllowsQuestionManagement("not_started")).toBe(true);
+    expect(competitionAllowsQuestionManagement("running")).toBe(false);
+    expect(competitionAllowsQuestionManagement("ended")).toBe(true);
   });
 });

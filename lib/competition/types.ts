@@ -16,6 +16,13 @@ export interface CompetitionControl {
   stoppedAt: string | null;
 }
 
+export interface CompetitionScreenNotice {
+  title: string;
+  content: string;
+  enabled: boolean;
+  updatedAt: string | null;
+}
+
 export interface CompetitionUser {
   id: number;
   role: CompetitionRole;

@@ -6,6 +6,7 @@ import {
   adminJudgeViewPaths,
   adminViewPaths,
   isAdminJudgeViewId,
+  isAdminQuestionManagementViewId,
   isRoutedAdminViewId,
 } from "./navigation";
 
@@ -24,6 +25,7 @@ describe("admin navigation", () => {
   it("only accepts routable child views", () => {
     expect(isRoutedAdminViewId("models")).toBe(true);
     expect(isRoutedAdminViewId("competition")).toBe(true);
+    expect(isRoutedAdminViewId("activity")).toBe(true);
     expect(isRoutedAdminViewId("access")).toBe(false);
     expect(isRoutedAdminViewId("overview")).toBe(false);
     expect(isRoutedAdminViewId("unknown")).toBe(false);
@@ -39,5 +41,18 @@ describe("admin navigation", () => {
     expect(isAdminJudgeViewId("competition")).toBe(true);
     expect(isAdminJudgeViewId("answers")).toBe(true);
     expect(isAdminJudgeViewId("accounts")).toBe(false);
+  });
+
+  it("groups question content and answer progress under question management", () => {
+    expect(isAdminQuestionManagementViewId("questions")).toBe(true);
+    expect(isAdminQuestionManagementViewId("answers")).toBe(true);
+    expect(isAdminQuestionManagementViewId("competition")).toBe(false);
+    expect(isAdminQuestionManagementViewId("overview")).toBe(false);
+  });
+
+  it("routes the standalone activity log page", () => {
+    expect(adminViewPaths.activity).toBe("/admin/activity");
+    expect(adminViewFromPathname("/admin/activity")).toBe("activity");
+    expect(isAdminJudgeViewId("activity")).toBe(false);
   });
 });

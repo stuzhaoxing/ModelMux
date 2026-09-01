@@ -13,6 +13,7 @@ import type {
   CompetitionControl,
   CompetitionQuestion,
   CompetitionRole,
+  CompetitionScreenNotice,
   CompetitionUser,
   ContestantAnswer,
   JudgeAnswerRow,
@@ -64,6 +65,13 @@ interface CompetitionControlRow extends RowDataPacket {
   ends_at: string | null;
   stopped_at: string | null;
   active: number | string;
+}
+
+interface CompetitionScreenNoticeRow extends RowDataPacket {
+  title: string;
+  content_text: string;
+  enabled: number | boolean;
+  updated_at: string;
 }
 
 interface AnswerRow extends RowDataPacket {
@@ -136,6 +144,41 @@ export async function getCompetitionControl(now = Date.now()): Promise<Competiti
   const result = await rows<CompetitionControlRow[]>(competitionControlSelect);
   if (!result[0]) throw new Error("competition_control_missing");
   return toCompetitionControl(result[0], now);
+}
+
+export async function getCompetitionScreenNotice(): Promise<CompetitionScreenNotice> {
+  const result = await rows<CompetitionScreenNoticeRow[]>(
+    `SELECT title, content_text, enabled, updated_at
+     FROM competition_screen_notice WHERE id = 1`,
+  );
+  const notice = result[0];
+  return notice ? {
+    title: notice.title,
+    content: notice.content_text,
+    enabled: Boolean(notice.enabled),
+    updatedAt: notice.updated_at,
+  } : {
+    title: "赛前提醒",
+    content: "",
+    enabled: false,
+    updatedAt: null,
+  };
+}
+
+export async function updateCompetitionScreenNotice(input: {
+  title: string;
+  content: string;
+  enabled: boolean;
+}): Promise<CompetitionScreenNotice> {
+  await ensureCompetitionSchema();
+  await competitionPool().execute(
+    `INSERT INTO competition_screen_notice (id, title, content_text, enabled)
+     VALUES (1, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       title = VALUES(title), content_text = VALUES(content_text), enabled = VALUES(enabled)`,
+    [input.title, input.content, input.enabled],
+  );
+  return getCompetitionScreenNotice();
 }
 
 function toUser(row: UserRow): CompetitionUser {
@@ -315,6 +358,35 @@ export async function authenticateContestantApiKey(
   return result[0] ? toContestantApiIdentity(result[0]) : null;
 }
 
+export interface CompetitionTokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
+export async function recordCompetitionTokenUsage(
+  usage: CompetitionTokenUsage,
+): Promise<void> {
+  await ensureCompetitionSchema();
+  await competitionPool().execute(
+    `INSERT INTO competition_token_minutes
+       (minute_at, input_tokens, output_tokens, total_tokens)
+     VALUES (DATE_FORMAT(CURRENT_TIMESTAMP(3), '%Y-%m-%d %H:%i:00'), ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       input_tokens = input_tokens + ?,
+       output_tokens = output_tokens + ?,
+       total_tokens = total_tokens + ?`,
+    [
+      usage.inputTokens,
+      usage.outputTokens,
+      usage.totalTokens,
+      usage.inputTokens,
+      usage.outputTokens,
+      usage.totalTokens,
+    ],
+  );
+}
+
 export async function updateUser(input: {
   id: number;
   displayName?: string;
@@ -426,12 +498,8 @@ export async function createQuestion(input: {
   await ensureCompetitionSchema();
   const connection = await competitionPool().getConnection();
   return withCompetitionTransaction(connection, async (transaction) => {
-    const [questionSet] = await transaction.execute<LockedQuestionRow[]>(
-      "SELECT id, title, status FROM competition_questions ORDER BY id FOR UPDATE",
-    );
-    if (questionSet.some((question) => question.status !== "draft")) {
-      throw new Error("question_set_published");
-    }
+    const control = await lockCompetitionControl(transaction);
+    if (Boolean(Number(control.active))) throw new Error("competition_running");
     const [result] = await transaction.execute<ResultSetHeader>(
       `INSERT INTO competition_questions
          (title, content_html, status, created_by, published_at)
@@ -453,10 +521,12 @@ export async function updateQuestion(input: {
   await ensureCompetitionSchema();
   const connection = await competitionPool().getConnection();
   return withCompetitionTransaction(connection, async (transaction) => {
+    const control = await lockCompetitionControl(transaction);
+    if (Boolean(Number(control.active))) throw new Error("competition_running");
     const [result] = await transaction.execute<ResultSetHeader>(
       `UPDATE competition_questions
        SET title = ?, content_html = ?, version = version + 1
-       WHERE id = ? AND status = 'draft' AND version = ?`,
+       WHERE id = ? AND version = ?`,
       [input.title, input.contentHtml, input.id, input.expectedVersion],
     );
     if (result.affectedRows === 0) return false;

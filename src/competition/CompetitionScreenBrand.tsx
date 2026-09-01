@@ -8,9 +8,25 @@ import {
 
 import styles from "./CompetitionScreen.module.css";
 
-export default function CompetitionScreenBrand({ time }: { time?: string }) {
+interface CompetitionScreenBrandProps {
+  time?: string;
+  countdownLabel?: string;
+  countdownValue?: string;
+  stageLabel?: string;
+  stageDetail?: string;
+}
+
+export default function CompetitionScreenBrand({
+  time,
+  countdownLabel,
+  countdownValue,
+  stageLabel,
+  stageDetail,
+}: CompetitionScreenBrandProps) {
+  const showCountdown = Boolean(countdownLabel && countdownValue);
+
   return (
-    <header className={styles.eventMasthead}>
+    <header className={styles.eventMasthead} data-countdown={showCountdown}>
       <Image
         alt=""
         aria-hidden
@@ -23,10 +39,27 @@ export default function CompetitionScreenBrand({ time }: { time?: string }) {
 
       <div className={styles.eventTitles}>
         <h1 aria-label={COMPETITION_NAME}>{COMPETITION_DISPLAY_NAME}</h1>
-        <p>{COMPETITION_TRACK_NAME}</p>
+        <div className={styles.eventSubtitleLine}>
+          <p>{COMPETITION_TRACK_NAME}</p>
+          {stageLabel && (
+            <span className={styles.eventStage}>
+              <i />
+              <strong>{stageLabel}</strong>
+              {stageDetail && <small>{stageDetail}</small>}
+            </span>
+          )}
+        </div>
       </div>
 
-      {time && (
+      {showCountdown ? (
+        <div className={styles.eventCountdown}>
+          <div className={styles.eventCountdownMeta}>
+            <span>{countdownLabel}</span>
+            {time && <small>北京时间 {time}</small>}
+          </div>
+          <strong>{countdownValue}</strong>
+        </div>
+      ) : time && (
         <div className={styles.currentTime}>
           <span>北京时间</span>
           <strong>{time}</strong>
