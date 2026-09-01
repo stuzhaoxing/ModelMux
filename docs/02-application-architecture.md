@@ -81,9 +81,9 @@ doubao-seed-2-0-pro-260215（仅配置 ARK_API_KEYS 后开放）
 4. 一旦选定上游响应并开始向客户端返回，禁止切换供应商，避免拼接两条 SSE 流。
 5. `4xx` 业务错误不会自动故障切换，防止重复提交无效请求。
 6. 模型 ID 采用平台原名，不代表思考开关或推理强度；网关不根据模型名称覆盖参数。
-7. Playground 没有专用后端，浏览器直接拿选手自己的 API Key 调 `/v1/chat/completions`，因此和外部客户端走完全相同的鉴权、白名单与供应商路由；网关不记录账号调用量，也不设置本地额度或频率限制。
+7. Playground 没有专用后端，浏览器直接拿选手自己的 API Key 调 `/v1/chat/completions`，因此和外部客户端走完全相同的鉴权、白名单与供应商路由；网关不记录个人调用量，也不设置本地额度或频率限制，只汇总本场比赛的分钟级 Token 总量供大屏展示。
 8. DeepSeek V4 官方使用 `thinking.type=enabled|disabled` 与可选的 `reasoning_effort=high|max`；Qwen Chat Completions 使用 `enable_thinking` 与可选的正整数 `thinking_budget`。
-9. 切换备用路由时，只把 `model` 替换为该路由的上游模型 ID；其余请求参数不校验、不删除、不注入，由上游决定是否接受。
+9. 切换备用路由时，只把 `model` 替换为该路由的上游模型 ID；流式请求额外合并 `stream_options.include_usage=true` 以读取上游用量，其余请求参数不校验、不删除，由上游决定是否接受。
 
 ## 4. 安全默认值
 
@@ -99,7 +99,7 @@ doubao-seed-2-0-pro-260215（仅配置 ARK_API_KEYS 后开放）
 
 ## 5. 当前持久化边界
 
-当前版本的运行指标和最近 100 条请求元数据只保存在单个 Node.js 进程内，进程重启即清空。供应商密钥和运维客户端密钥保存在部署环境变量中；选手独立 API Key 随账号保存在 MySQL。
+当前版本的运行指标和最近 100 条请求元数据只保存在单个 Node.js 进程内，进程重启即清空。供应商密钥和运维客户端密钥保存在部署环境变量中；选手独立 API Key、本场比赛分钟级 Token 汇总和管理员维护的赛前大屏公告随考核数据保存在 MySQL，不保存个人 Token 用量。大屏公告是单例纯文本配置，只允许管理员写入，并且仅在比赛状态为 `not_started` 时覆盖展示。
 
 模型 API 的运行开关是例外：状态原子写入 `MODELMUX_DATA_DIR/gateway-service-state.json`，进程或容器重启后仍保持。状态文件损坏或不可读取时采取失败即关闭策略，管理员可从设置页重新开启并修复文件。
 

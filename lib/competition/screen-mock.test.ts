@@ -15,6 +15,7 @@ const base: CompetitionScreenSnapshot = {
   stage: "rehearsal",
   schedule: { configured: false, startAt: null, endAt: null },
   competition: { state: "running", durationMinutes: 90, startedAt: "2026-08-21T01:00:00.000Z", endsAt: "2026-08-21T02:30:00.000Z", stoppedAt: null },
+  notice: { title: "赛前提醒", content: "", enabled: false, updatedAt: null },
   summary: {
     contestantTotal: 2,
     questionTotal: 3,
@@ -24,7 +25,9 @@ const base: CompetitionScreenSnapshot = {
     unfinished: 0,
     drafting: 0,
     notStarted: 2,
+    totalTokens: 0,
   },
+  tokenMinutes: Array<number>(90).fill(0),
   contestants: ["甲", "乙"].map((name) => ({
     id: name === "甲" ? 1 : 2,
     name,
@@ -51,6 +54,8 @@ describe("competition screen accelerated mock", () => {
     expect(minuteOne.simulation?.elapsedMinutes).toBe(1);
     expect(minuteOne.summary.questionTotal).toBe(competitionScreenMockQuestionTotal);
     expect(minuteOne.summary.publishedQuestions).toBe(competitionScreenMockQuestionTotal);
+    expect(minuteOne.tokenMinutes.filter((value) => value > 0)).toHaveLength(1);
+    expect(minuteOne.summary.totalTokens).toBe(minuteOne.tokenMinutes[0]);
     expect(minuteOne.contestants[0]).toMatchObject({ status: "drafting", drafting: 1 });
     expect(minuteOne.contestants[1]).toMatchObject({ status: "not_started", drafting: 0 });
     expect(minuteOne.stage).toBe("live");
@@ -70,6 +75,8 @@ describe("competition screen accelerated mock", () => {
     expect(almostFinished.simulation?.elapsedMinutes).toBe(89);
     expect(almostFinished.stage).toBe("live");
     expect(finished.simulation?.elapsedMinutes).toBe(90);
+    expect(finished.tokenMinutes.every((value) => value > 0)).toBe(true);
+    expect(finished.summary.totalTokens).toBe(finished.tokenMinutes.reduce((sum, value) => sum + value, 0));
     expect(finished.summary.fullySubmitted).toBe(1);
     expect(finished.summary.unfinished).toBe(1);
     expect(finished.summary.closedQuestions).toBe(competitionScreenMockQuestionTotal);

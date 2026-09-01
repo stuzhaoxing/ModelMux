@@ -52,7 +52,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const contentHtml = cleanRichText(input.contentHtml);
     if (!richTextHasContent(contentHtml)) return NextResponse.json({ error: "题目内容不能为空" }, { status: 400 });
     const changed = await updateQuestion({ id, title: input.title, contentHtml, expectedVersion: input.expectedVersion });
-    if (!changed) return NextResponse.json({ error: "题目已发布、关闭或被其他评委修改，请刷新后重试" }, { status: 409 });
+    if (!changed) return NextResponse.json({ error: "题目已被其他管理员修改，请刷新后重试" }, { status: 409 });
     const question = await getQuestion(id);
     await recordActivity({
       category: "question",

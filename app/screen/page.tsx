@@ -30,11 +30,17 @@ export const metadata: Metadata = {
 export default async function CompetitionScreenPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mock?: string | string[]; mockToken?: string | string[] }>;
+  searchParams: Promise<{
+    mock?: string | string[];
+    mockToken?: string | string[];
+    noticePreview?: string | string[];
+  }>;
 }) {
   const query = await searchParams;
   const mockMode = competitionScreenMockEnabled()
     && (query.mock === "1" || query.mockToken === "1");
+  const noticePreview = competitionScreenMockEnabled()
+    && query.noticePreview === "1";
   const token = (await cookies()).get(screenSessionCookieName)?.value;
   if (!verifyScreenSessionToken(token)) {
     return <CompetitionScreenLogin configured={screenAuthConfigured()} />;
@@ -51,5 +57,11 @@ export default async function CompetitionScreenPage({
   } catch (error) {
     console.error("[competition] 大屏首屏数据读取失败", error);
   }
-  return <CompetitionScreen initialSnapshot={snapshot} key={mockMode ? `mock-${mockStartedAt}` : "live"} mockMode={mockMode} mockStartedAt={mockStartedAt} />;
+  return <CompetitionScreen
+    initialSnapshot={snapshot}
+    key={mockMode ? `mock-${mockStartedAt}` : "live"}
+    mockMode={mockMode}
+    mockStartedAt={mockStartedAt}
+    noticePreview={noticePreview}
+  />;
 }

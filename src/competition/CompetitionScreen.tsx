@@ -4,7 +4,9 @@ import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import {
+  Activity,
   CheckCircle2,
+  Megaphone,
   Radio,
   Users,
 } from "lucide-react";
@@ -14,6 +16,7 @@ import {
   competitionScreenGrid,
   competitionScreenProgressChanges,
   competitionScreenProgressCount,
+  competitionScreenNoticeVisible,
   competitionScreenStageAt,
   type CompetitionScreenContestant,
   type CompetitionScreenContestantStatus,
@@ -21,6 +24,7 @@ import {
   type CompetitionScreenSnapshot,
   type CompetitionScreenStage,
 } from "@/lib/competition/screen-model";
+import type { CompetitionScreenNotice } from "@/lib/competition/types";
 
 import CompetitionScreenBackdrop from "./CompetitionScreenBackdrop";
 import CompetitionScreenBrand from "./CompetitionScreenBrand";
@@ -28,6 +32,7 @@ import styles from "./CompetitionScreen.module.css";
 
 const snapshotIntervalMs = 3_000;
 const progressHighlightMs = 1_800;
+const tokenMinuteBucketCount = 90;
 
 const stageLabels: Record<CompetitionScreenStage, string> = {
   setup: "等待题目发布",
@@ -86,6 +91,10 @@ function simulationCountdown(snapshot: CompetitionScreenSnapshot, now: number): 
   return formatDuration(remainingAtSnapshot - acceleratedSeconds);
 }
 
+function formatTokenTotal(value: number): string {
+  return value.toLocaleString("zh-CN");
+}
+
 function progressPercent(contestant: CompetitionScreenContestant, questionTotal: number): number {
   if (questionTotal === 0) return 0;
   return Math.min(100, (competitionScreenProgressCount(contestant, questionTotal) / questionTotal) * 100);
@@ -107,10 +116,12 @@ export default function CompetitionScreen({
   initialSnapshot,
   mockMode = false,
   mockStartedAt = null,
+  noticePreview = false,
 }: {
   initialSnapshot: CompetitionScreenSnapshot | null;
   mockMode?: boolean;
   mockStartedAt?: number | null;
+  noticePreview?: boolean;
 }) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [now, setNow] = useState(() => initialSnapshot ? Date.parse(initialSnapshot.generatedAt) : Date.now());
@@ -222,29 +233,26 @@ export default function CompetitionScreen({
     : formatCountdown(countdownTarget, now);
   const density = screenGrid.rows >= 6 ? "dense" : screenGrid.rows >= 5 ? "compact" : "regular";
   const rosterStyle = { "--screen-columns": screenGrid.columns, "--screen-rows": screenGrid.rows } as CSSProperties;
+  const showPreStartNotice = snapshot.notice.enabled
+    && Boolean(snapshot.notice.content.trim())
+    && (noticePreview || competitionScreenNoticeVisible({
+      competitionState: snapshot.competition.state,
+      notice: snapshot.notice,
+    }));
 
   return (
     <main className={styles.screen} data-stage={stage}>
       <CompetitionScreenBackdrop />
-      <CompetitionScreenBrand time={formatClock(now)} />
+      <CompetitionScreenBrand
+        countdownLabel={countdownLabel}
+        countdownValue={countdownValue}
+        stageDetail={`已发布 ${snapshot.summary.publishedQuestions}/${snapshot.summary.questionTotal} 题`}
+        stageLabel={stageLabels[stage]}
+        time={formatClock(now)}
+      />
 
       <section className={styles.contentFrame} aria-label="比赛实时态势">
         <section className={styles.centerStage}>
-          <div className={styles.centerStatus}>
-            <Image
-              alt=""
-              aria-hidden
-              className={styles.centerStatusCity}
-              height={325}
-              loading="eager"
-              sizes="460px"
-              src="/screen/competition-city-tech.webp"
-              width={980}
-            />
-            <div className={styles.stageSummary}><span><Radio />{stageLabels[stage]}</span><small>已发布 {snapshot.summary.publishedQuestions}/{snapshot.summary.questionTotal} 题</small></div>
-            <div className={styles.countdown}><span>{countdownLabel}</span><strong>{countdownValue}</strong></div>
-          </div>
-
           <div className={styles.rosterHeading}>
             <span><Users />选手作答<small>按选手姓名拼音首字母顺序排列</small></span>
             <div className={styles.legend}>
@@ -271,10 +279,133 @@ export default function CompetitionScreen({
             {[...recentProgressChanges.values()].map((change) => `${change.after.name} 答题进度更新`).join("，")}
           </div>
 
+          <TokenConsumptionChart
+            buckets={snapshot.tokenMinutes ?? Array<number>(tokenMinuteBucketCount).fill(0)}
+            totalTokens={snapshot.summary.totalTokens}
+          />
         </section>
       </section>
 
+      {showPreStartNotice && <PreStartNoticeOverlay notice={snapshot.notice} />}
+
     </main>
+  );
+}
+
+function PreStartNoticeOverlay({ notice }: { notice: CompetitionScreenNotice }) {
+  const contentLength = notice.content.length;
+  const density = contentLength <= 72
+    ? "huge"
+    : contentLength <= 160
+      ? "large"
+      : contentLength <= 300
+        ? "medium"
+        : "compact";
+  const lines = notice.content.split(/\r?\n/);
+
+  return (
+    <section
+      aria-labelledby="pre-start-notice-title"
+      aria-modal="true"
+      className={styles.preStartNoticeLayer}
+      role="dialog"
+    >
+      <div className={styles.preStartNoticeDialog} data-density={density}>
+        <span className={styles.preStartNoticeLabel}><Megaphone />赛前公告</span>
+        <h2 id="pre-start-notice-title">{notice.title}</h2>
+        <div className={styles.preStartNoticeContent}>
+          {lines.map((line, index) => (
+            <p data-url={/^https?:\/\/\S+$/i.test(line.trim())} key={`${index}-${line}`}>
+              {line || <br />}
+            </p>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function RollingTokenTotal({ value }: { value: number }) {
+  const [displayValue, setDisplayValue] = useState(value);
+  const currentValue = useRef(value);
+
+  useEffect(() => {
+    const from = currentValue.current;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const duration = reducedMotion ? 0 : 900;
+    const startedAt = performance.now();
+    let frame = 0;
+
+    const update = (timestamp: number) => {
+      const progress = duration === 0 ? 1 : Math.min(1, (timestamp - startedAt) / duration);
+      const eased = 1 - (1 - progress) ** 3;
+      const nextValue = Math.round(from + (value - from) * eased);
+      currentValue.current = nextValue;
+      setDisplayValue(nextValue);
+      if (progress < 1) frame = window.requestAnimationFrame(update);
+    };
+
+    frame = window.requestAnimationFrame(update);
+    return () => window.cancelAnimationFrame(frame);
+  }, [value]);
+
+  return <strong aria-label={`${formatTokenTotal(value)} 词元`}>{formatTokenTotal(displayValue)}</strong>;
+}
+
+function TokenConsumptionChart({ buckets, totalTokens }: { buckets: number[]; totalTokens: number }) {
+  const chartWidth = 1200;
+  const chartHeight = 100;
+  const chartLeft = 10;
+  const chartRight = chartWidth - chartLeft;
+  const chartBottom = 94;
+  const chartTop = 8;
+  const maxValue = Math.max(1, ...buckets);
+  const slotWidth = (chartRight - chartLeft) / Math.max(1, buckets.length);
+  const barWidth = Math.max(6, slotWidth * .58);
+
+  return (
+    <figure className={styles.tokenFlowPanel} data-active={totalTokens > 0}>
+      <Image
+        alt=""
+        aria-hidden
+        className={styles.tokenFlowScenery}
+        height={340}
+        loading="eager"
+        sizes="100vw"
+        src="/screen/competition-eco-strip.webp"
+        width={1672}
+      />
+      <figcaption className={styles.tokenFlowHeader}>
+        <span className={styles.tokenFlowTitle}><Activity /><strong>实时AI算力消耗统计</strong></span>
+        <span className={styles.tokenFlowTotal}>
+          <RollingTokenTotal value={totalTokens} />
+          <small>词元</small>
+        </span>
+      </figcaption>
+      <div className={styles.tokenFlowChart}>
+        <svg aria-label={`本场共消耗 ${totalTokens} 词元`} preserveAspectRatio="none" role="img" viewBox={`0 0 ${chartWidth} ${chartHeight}`}>
+          <defs>
+            <linearGradient id="token-minute-fill" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0" stopColor="#7cf0d0" stopOpacity=".95" />
+              <stop offset="1" stopColor="#3ec8ff" stopOpacity=".28" />
+            </linearGradient>
+          </defs>
+          <g className={styles.tokenFlowGrid}>
+            <path d="M0 30H1200M0 60H1200M0 90H1200" />
+            <path d="M200 0V100M400 0V100M600 0V100M800 0V100M1000 0V100" />
+          </g>
+          {buckets.map((value, index) => {
+            const scale = Math.max(.025, value / maxValue);
+            const x = chartLeft + index * slotWidth + (slotWidth - barWidth) / 2;
+            const style = {
+              "--token-bar-delay": `${index * 4}ms`,
+              "--token-bar-scale": scale,
+            } as CSSProperties;
+            return <rect className={styles.tokenMinuteBar} height={chartBottom - chartTop} key={index} rx="2" style={style} width={barWidth} x={x} y={chartTop} />;
+          })}
+        </svg>
+      </div>
+    </figure>
   );
 }
 

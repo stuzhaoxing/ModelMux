@@ -6,8 +6,6 @@ import {
   Clock3,
   FileEdit,
   FilePlus2,
-  Gavel,
-  LayoutDashboard,
   LoaderCircle,
   LockKeyhole,
   RefreshCw,
@@ -23,6 +21,7 @@ import {
   adminJudgeViewPaths,
   type AdminJudgeView,
 } from "@/lib/admin/navigation";
+import { competitionAllowsQuestionManagement } from "@/lib/competition/control";
 import { eventStreamRetryDelayMs } from "@/lib/competition/event-stream";
 import {
   questionTitleIsWithinLimit,
@@ -32,9 +31,9 @@ import {
 import type { ActivityEntry, CompetitionControl, CompetitionQuestion, JudgeAnswerRow, JudgeQuestion } from "@/lib/competition/types";
 import type { OperationMode } from "@/lib/gateway/operation-mode";
 import { apiRequest, formatCompetitionTime } from "./api";
-import { JudgeActivityLog } from "./JudgeActivityLog";
 import { JudgeDashboard } from "./JudgeDashboard";
 import { useOperationMode } from "./OperationModeBanner";
+import { PreviewableRichContent } from "./PreviewableRichContent";
 import { RichTextEditor } from "./RichTextEditor";
 
 export default function JudgeApp() {
@@ -51,7 +50,6 @@ export default function JudgeApp() {
   const [selectedId, setSelectedId] = useState<number | "new" | null>(null);
   const [answers, setAnswers] = useState<JudgeAnswerRow[]>([]);
   const [selectedContestantId, setSelectedContestantId] = useState<number | null>(null);
-  const [online, setOnline] = useState(false);
   const { setMode } = useOperationMode();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -59,17 +57,11 @@ export default function JudgeApp() {
   const [notice, setNotice] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [contentHtml, setContentHtml] = useState("");
-  const [activity, setActivity] = useState<ActivityEntry[]>([]);
-  const [activityTotal, setActivityTotal] = useState(0);
-  const [activityLoading, setActivityLoading] = useState(true);
-  const [loadingOlder, setLoadingOlder] = useState(false);
-  const [reachedLogStart, setReachedLogStart] = useState(false);
-  const [logCollapsed, setLogCollapsed] = useState(false);
 
   const selectedQuestion = selectedId === "new" ? null : questions.find((item) => item.id === selectedId) ?? null;
   const selectedAnswer = answers.find((item) => item.contestantId === selectedContestantId) ?? null;
-  const questionSetEditable = questions.every((question) => question.status === "draft");
-  const questionEditable = questionSetEditable && (selectedId === "new" || selectedQuestion?.status === "draft");
+  const questionManagementEnabled = competitionAllowsQuestionManagement(competition.state);
+  const questionEditable = questionManagementEnabled && (selectedId === "new" || selectedQuestion !== null);
 
   const loadQuestions = useCallback(async (retainSelection = true) => {
     const result = await apiRequest<JudgeQuestionsResponse>("/api/competition/judge/questions");
@@ -90,42 +82,6 @@ export default function JudgeApp() {
     setAnswers(result.answers);
     setSelectedContestantId((current) => current && result.answers.some((item) => item.contestantId === current) ? current : result.answers[0]?.contestantId ?? null);
   }, []);
-
-  const mergeActivity = useCallback((incoming: ActivityEntry[]) => {
-    if (incoming.length === 0) return;
-    setActivity((current) => {
-      const seen = new Set(current.map((entry) => entry.id));
-      const merged = [...current, ...incoming.filter((entry) => !seen.has(entry.id))];
-      merged.sort((left, right) => right.id - left.id);
-      return merged;
-    });
-  }, []);
-
-  const loadActivity = useCallback(async () => {
-    try {
-      const result = await apiRequest<ActivityPage>("/api/competition/judge/activity");
-      mergeActivity(result.activity);
-      setActivityTotal(result.total);
-    } finally {
-      setActivityLoading(false);
-    }
-  }, [mergeActivity]);
-
-  const loadOlderActivity = useCallback(async () => {
-    const oldest = activity.at(-1);
-    if (!oldest || loadingOlder) return;
-    setLoadingOlder(true);
-    try {
-      const result = await apiRequest<ActivityPage>(`/api/competition/judge/activity?before=${oldest.id}`);
-      mergeActivity(result.activity);
-      setActivityTotal(result.total);
-      if (result.reachedStart) setReachedLogStart(true);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "现场日志读取失败");
-    } finally {
-      setLoadingOlder(false);
-    }
-  }, [activity, loadingOlder, mergeActivity]);
 
   useEffect(() => {
     apiRequest<JudgeQuestionsResponse>("/api/competition/judge/questions")
@@ -149,10 +105,6 @@ export default function JudgeApp() {
       .catch((loadError) => setError(loadError instanceof Error ? loadError.message : "题目读取失败"))
       .finally(() => setLoading(false));
   }, [loadAnswers]);
-
-  useEffect(() => {
-    void loadActivity().catch(() => setActivityLoading(false));
-  }, [loadActivity]);
 
   useEffect(() => {
     let source: EventSource | null = null;
@@ -190,7 +142,6 @@ export default function JudgeApp() {
       source = stream;
       stream.addEventListener("connected", (event) => {
         attempt = 0;
-        setOnline(true);
         const data = JSON.parse((event as MessageEvent).data) as { mode?: OperationMode };
         if (data.mode) setMode(data.mode);
         void loadQuestions(true);
@@ -202,8 +153,6 @@ export default function JudgeApp() {
       });
       stream.addEventListener("activity", (event) => {
         const entries = JSON.parse((event as MessageEvent).data) as ActivityEntry[];
-        mergeActivity(entries);
-        setActivityTotal((current) => current + entries.length);
         const deletedQuestionIds = entries
           .filter((entry) => entry.action === "question-deleted" && entry.questionId !== null)
           .map((entry) => entry.questionId);
@@ -219,13 +168,10 @@ export default function JudgeApp() {
         scheduleQueueReload();
         if (typeof selectedId === "number" && data.questionId === selectedId) scheduleAnswerReload(selectedId);
       });
-      stream.addEventListener("degraded", () => setOnline(false));
       stream.onopen = () => {
         attempt = 0;
-        setOnline(true);
       };
       stream.onerror = () => {
-        setOnline(false);
         // 浏览器只在连接被掐断时自己重连，服务重启返回 502 时它会直接放弃。
         if (stream.readyState !== EventSource.CLOSED) return;
         stream.close();
@@ -243,7 +189,7 @@ export default function JudgeApp() {
       if (queueRefreshTimerRef.current !== null) window.clearTimeout(queueRefreshTimerRef.current);
       queueRefreshTimerRef.current = null;
     };
-  }, [loadAnswers, loadQuestions, mergeActivity, selectedId, setMode]);
+  }, [loadAnswers, loadQuestions, selectedId, setMode]);
 
   const progress = useMemo(() => ({
     total: answers.length,
@@ -274,7 +220,7 @@ export default function JudgeApp() {
         setTitle(result.question.title);
         setContentHtml(result.question.contentHtml);
         editorVersionRef.current = result.question.version;
-      } else if (selectedQuestion?.status === "draft") {
+      } else if (selectedQuestion && questionManagementEnabled) {
         const result = await apiRequest<{ question: CompetitionQuestion }>(`/api/competition/judge/questions/${selectedQuestion.id}`, {
           method: "PATCH",
           body: JSON.stringify({
@@ -289,7 +235,7 @@ export default function JudgeApp() {
         editorVersionRef.current = result.question.version;
         await loadQuestions(true);
       }
-      setNotice("题目已保存为草稿");
+      setNotice("题目已保存");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "题目保存失败");
     } finally {
@@ -336,7 +282,7 @@ export default function JudgeApp() {
       setQuestions(result.questions);
       setCompetition(result.competition);
       setDurationInput(String(result.competition.durationMinutes));
-      setNotice("比赛已停止，题目已对选手隐藏");
+      setNotice("比赛已停止，题目已对选手隐藏并恢复编辑");
     } catch (stopError) {
       setError(stopError instanceof Error ? stopError.message : "停止比赛失败");
     } finally {
@@ -405,11 +351,11 @@ export default function JudgeApp() {
     window.history.pushState(
       null,
       "",
-      question.status === "draft"
+      questionManagementEnabled || question.status === "draft"
         ? adminJudgeViewPaths.questions
         : adminJudgeViewPaths.answers,
     );
-    if (question.status !== "draft") {
+    if (!questionManagementEnabled && question.status !== "draft") {
       void loadAnswers(question.id).catch((loadError) => setError(loadError instanceof Error ? loadError.message : "答题进度读取失败"));
     } else {
       setAnswers([]);
@@ -426,8 +372,8 @@ export default function JudgeApp() {
   }
 
   function createQuestion() {
-    if (!questionSetEditable) {
-      setError("题目已经统一发布，不能再新增题目");
+    if (!questionManagementEnabled) {
+      setError("比赛进行中不能新增题目，请先停止比赛");
       return;
     }
     setTitle("");
@@ -440,11 +386,11 @@ export default function JudgeApp() {
   }
 
   return (
-    <main className={`judge-workspace admin-judge-workspace ${view === "dashboard" ? "dashboard-view" : ""} ${logCollapsed ? "log-collapsed" : ""}`}>
+    <main className={`judge-workspace admin-judge-workspace ${view === "dashboard" ? "dashboard-view" : ""}`}>
         <aside className="question-queue">
           <div className="queue-heading">
             <span><small>考核题目</small><strong>{questions.length} 道</strong></span>
-            <button type="button" className="square-action" disabled={!questionSetEditable} title={questionSetEditable ? "新建题目" : "题目已统一发布"} onClick={createQuestion}><FilePlus2 />新建题目</button>
+            <button type="button" className="square-action" disabled={!questionManagementEnabled} title={questionManagementEnabled ? "新建题目" : "比赛进行中不能新建题目"} onClick={createQuestion}><FilePlus2 />新建题目</button>
           </div>
           <div className="question-list">
             {questions.map((question) => (
@@ -467,25 +413,26 @@ export default function JudgeApp() {
         </aside>
 
         <section className="judge-main">
-          <div className="judge-toolbar">
-            <div className="view-tabs" role="tablist">
-              <button type="button" className={view === "dashboard" ? "active" : ""} onClick={() => navigateView("dashboard")}><LayoutDashboard />总览</button>
-              <button type="button" className={view === "questions" ? "active" : ""} onClick={() => navigateView("questions")}><Gavel />题目内容</button>
-              <button type="button" disabled={!selectedQuestion || selectedQuestion.status === "draft"} className={view === "answers" ? "active" : ""} onClick={() => navigateView("answers")}><UsersRound />答题进度</button>
+          {view !== "dashboard" && (
+            <div className="judge-toolbar">
+              <div className="view-tabs" role="tablist" aria-label="题目管理视图">
+                <button type="button" role="tab" aria-selected={view === "questions"} className={view === "questions" ? "active" : ""} onClick={() => navigateView("questions")}><FileEdit />题目内容</button>
+                <button type="button" role="tab" aria-selected={view === "answers"} disabled={!selectedQuestion || selectedQuestion.status === "draft"} className={view === "answers" ? "active" : ""} onClick={() => navigateView("answers")}><UsersRound />答题进度</button>
+              </div>
+              <div className="judge-actions">
+                {view === "questions" && questionEditable && (
+                  <button type="button" className="primary-action" disabled={saving} onClick={() => void saveQuestion()}><FileEdit />保存题目</button>
+                )}
+                {questionManagementEnabled && typeof selectedId === "number" && (
+                  <button type="button" className="secondary-action danger" disabled={saving} onClick={() => void deleteSelectedQuestion()}>
+                    {saving ? <LoaderCircle className="spinning" /> : <Trash2 />}
+                    {saving ? "正在删除" : "删除题目"}
+                  </button>
+                )}
+                {view === "answers" && typeof selectedId === "number" && <button type="button" className="square-action light" disabled={saving} onClick={() => { void loadAnswers(selectedId); void loadQuestions(true); }}><RefreshCw />刷新答卷</button>}
+              </div>
             </div>
-            <div className="judge-actions">
-              {view === "questions" && questionEditable && (
-                <button type="button" className="primary-action" disabled={saving} onClick={() => void saveQuestion()}><FileEdit />保存题目</button>
-              )}
-              {view === "answers" && competition.state !== "running" && typeof selectedId === "number" && (
-                <button type="button" className="secondary-action danger" disabled={saving} onClick={() => void deleteSelectedQuestion()}>
-                  {saving ? <LoaderCircle className="spinning" /> : <Trash2 />}
-                  {saving ? "正在删除" : "删除题目"}
-                </button>
-              )}
-              {view === "answers" && typeof selectedId === "number" && <button type="button" className="square-action light" disabled={saving} onClick={() => { void loadAnswers(selectedId); void loadQuestions(true); }}><RefreshCw />刷新答卷</button>}
-            </div>
-          </div>
+          )}
           {(error || notice) && <div className={`workspace-message ${error ? "error" : "success"}`} role="status">{error ?? notice}</div>}
 
           {view === "dashboard" ? (
@@ -495,8 +442,8 @@ export default function JudgeApp() {
               competition={competition}
               durationInput={durationInput}
               competitionPending={saving}
-              canCreateQuestions={questionSetEditable}
               onOpenQuestion={selectQuestion}
+              onManageQuestions={() => navigateView("questions")}
               onCreateQuestion={createQuestion}
               onDurationChange={setDurationInput}
               onStartCompetition={() => void startCompetition()}
@@ -523,7 +470,11 @@ export default function JudgeApp() {
                     placeholder="输入考核题目标题"
                   />
                 </label>
-                {selectedQuestion && <span className={`large-status ${selectedQuestion.status}`}>{statusLabel(selectedQuestion.status)}</span>}
+                {selectedQuestion && (
+                  <span className={`large-status ${questionStatusTone(selectedQuestion.status, competition.state)}`}>
+                    {statusLabel(selectedQuestion.status, competition.state)}
+                  </span>
+                )}
               </div>
               <RichTextEditor value={contentHtml} onChange={setContentHtml} purpose="question" editable={questionEditable} minHeight={430} />
               {selectedQuestion && <div className="record-timeline"><span><Clock3 />创建 {formatCompetitionTime(selectedQuestion.createdAt)}</span>{selectedQuestion.publishedAt && <span><Send />发布 {formatCompetitionTime(selectedQuestion.publishedAt)}</span>}{selectedQuestion.closedAt && <span><LockKeyhole />关闭 {formatCompetitionTime(selectedQuestion.closedAt)}</span>}</div>}
@@ -551,7 +502,7 @@ export default function JudgeApp() {
                   {selectedAnswer ? (
                     <>
                       <header><div><span>{selectedAnswer.username}</span><h2>{selectedAnswer.contestantName} 的答卷</h2></div><span className={`answer-status ${selectedAnswer.status}`}>{answerStatusLabel(selectedAnswer.status)}</span></header>
-                      {selectedAnswer.status === "not_started" ? <div className="answer-empty"><Circle /><strong>尚未开始作答</strong></div> : <div className="rich-content" dangerouslySetInnerHTML={{ __html: selectedAnswer.contentHtml }} />}
+                      {selectedAnswer.status === "not_started" ? <div className="answer-empty"><Circle /><strong>尚未开始作答</strong></div> : <PreviewableRichContent html={selectedAnswer.contentHtml} imageLabel="答卷图片" />}
                       <footer><span>首次保存 {formatCompetitionTime(selectedAnswer.firstSavedAt)}</span><span>最后保存 {formatCompetitionTime(selectedAnswer.updatedAt)}</span><span>最终提交 {formatCompetitionTime(selectedAnswer.submittedAt)}</span></footer>
                     </>
                   ) : <div className="answer-empty"><UsersRound /><strong>选择一名选手查看答卷</strong></div>}
@@ -561,25 +512,8 @@ export default function JudgeApp() {
           ) : null}
         </section>
 
-        <JudgeActivityLog
-          entries={activity}
-          total={activityTotal}
-          online={online}
-          loading={activityLoading}
-          loadingOlder={loadingOlder}
-          hasOlder={!reachedLogStart && activity.length < activityTotal}
-          onLoadOlder={() => void loadOlderActivity()}
-          collapsed={logCollapsed}
-          onToggleCollapsed={() => setLogCollapsed((current) => !current)}
-        />
     </main>
   );
-}
-
-interface ActivityPage {
-  activity: ActivityEntry[];
-  total: number;
-  reachedStart: boolean;
 }
 
 interface JudgeQuestionsResponse {
@@ -615,8 +549,20 @@ function QuestionProgress({ question }: { question: JudgeQuestion }) {
   );
 }
 
-function statusLabel(status: CompetitionQuestion["status"]): string {
-  return status === "draft" ? "草稿" : status === "published" ? "答题中" : "已关闭";
+function statusLabel(
+  status: CompetitionQuestion["status"],
+  competitionState: CompetitionControl["state"],
+): string {
+  if (status === "draft") return "草稿";
+  return competitionState === "running" ? "答题中" : competitionState === "ended" ? "已停止" : "待开始";
+}
+
+function questionStatusTone(
+  status: CompetitionQuestion["status"],
+  competitionState: CompetitionControl["state"],
+): CompetitionQuestion["status"] {
+  if (status === "draft" || competitionState === "not_started") return "draft";
+  return competitionState === "running" ? "published" : "closed";
 }
 
 function questionQueueStatusLabel(

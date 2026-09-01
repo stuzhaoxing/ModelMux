@@ -61,7 +61,10 @@ export const AttachmentNode = Node.create({
   },
 
   parseHTML() {
-    return [{ tag: "a.rich-attachment[data-attachment-id]", priority: 1100 }];
+    return [
+      { tag: "div.rich-attachment[data-attachment-id]", priority: 1100 },
+      { tag: "a.rich-attachment[data-attachment-id]", priority: 1100 },
+    ];
   },
 
   renderHTML({ HTMLAttributes }) {
@@ -70,12 +73,9 @@ export const AttachmentNode = Node.create({
     const byteSize = HTMLAttributes["data-attachment-size"];
     const mimeType = HTMLAttributes["data-attachment-type"];
     return [
-      "a",
+      "div",
       mergeAttributes(HTMLAttributes, {
         class: "rich-attachment",
-        href: `/api/competition/media/${mediaId}`,
-        download: name,
-        title: `下载 ${name}`,
       }),
       ["span", { class: "attachment-type" }, attachmentTypeLabel(name, mimeType)],
       [
@@ -84,7 +84,16 @@ export const AttachmentNode = Node.create({
         ["strong", {}, name],
         ["small", {}, formatAttachmentSize(byteSize)],
       ],
-      ["span", { class: "attachment-download" }, "下载"],
+      [
+        "a",
+        {
+          class: "attachment-download",
+          href: `/api/competition/media/${mediaId}`,
+          download: name,
+          title: `下载 ${name}`,
+        },
+        "下载",
+      ],
     ];
   },
 });

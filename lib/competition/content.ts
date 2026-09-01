@@ -19,8 +19,23 @@ function cleanAttachmentName(value: string | undefined): string {
 }
 
 const transformLink: sanitizeHtml.Transformer = (_tagName, attribs) => {
+  const classes = attribs.class?.split(/\s+/) ?? [];
+  if (classes.includes("attachment-download")) {
+    const mediaId = storedMediaId(attribs.href ?? "");
+    if (!mediaId) return { tagName: "span", attribs: {} as sanitizeHtml.Attributes };
+    const name = cleanAttachmentName(attribs.download);
+    return {
+      tagName: "a",
+      attribs: {
+        href: `/api/competition/media/${mediaId}`,
+        class: "attachment-download",
+        download: name,
+        title: `下载 ${name}`,
+      },
+    };
+  }
   const declaredAttachmentId = attribs["data-attachment-id"];
-  const attachment = declaredAttachmentId !== undefined || attribs.class?.split(/\s+/).includes("rich-attachment");
+  const attachment = declaredAttachmentId !== undefined || classes.includes("rich-attachment");
   if (attachment) {
     const mediaId = storedMediaId(attribs.href ?? "");
     if (!mediaId || String(mediaId) !== declaredAttachmentId) {
@@ -53,6 +68,33 @@ const transformLink: sanitizeHtml.Transformer = (_tagName, attribs) => {
       ...attribs,
       target: "_blank",
       rel: "noopener noreferrer",
+    },
+  };
+};
+
+const transformAttachmentContainer: sanitizeHtml.Transformer = (tagName, attribs) => {
+  const declaredAttachmentId = attribs["data-attachment-id"];
+  const attachment = declaredAttachmentId !== undefined || attribs.class?.split(/\s+/).includes("rich-attachment");
+  if (!attachment) return { tagName, attribs };
+  const mediaId = Number(declaredAttachmentId);
+  if (!Number.isSafeInteger(mediaId) || mediaId <= 0) {
+    return { tagName: "span", attribs: {} as sanitizeHtml.Attributes };
+  }
+  const name = cleanAttachmentName(attribs["data-attachment-name"]);
+  const byteSize = /^\d{1,20}$/.test(attribs["data-attachment-size"] ?? "")
+    ? attribs["data-attachment-size"]
+    : "0";
+  const mimeType = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+*-]+$/i.test(attribs["data-attachment-type"] ?? "")
+    ? attribs["data-attachment-type"].toLowerCase().slice(0, 80)
+    : "application/octet-stream";
+  return {
+    tagName: "div",
+    attribs: {
+      class: "rich-attachment",
+      "data-attachment-id": String(mediaId),
+      "data-attachment-name": name,
+      "data-attachment-size": byteSize,
+      "data-attachment-type": mimeType,
     },
   };
 };
@@ -90,6 +132,7 @@ export function cleanRichText(input: string): string {
       "tr",
       "th",
       "td",
+      "div",
     ],
     allowedAttributes: {
       a: [
@@ -104,11 +147,19 @@ export function cleanRichText(input: string): string {
         "data-attachment-size",
         "data-attachment-type",
       ],
+      div: [
+        "class",
+        "data-attachment-id",
+        "data-attachment-name",
+        "data-attachment-size",
+        "data-attachment-type",
+      ],
       img: ["src", "alt", "title"],
       span: ["class"],
     },
     allowedClasses: {
-      a: ["rich-attachment"],
+      a: ["rich-attachment", "attachment-download"],
+      div: ["rich-attachment"],
       span: [...attachmentClasses],
     },
     allowedSchemes: ["http", "https", "mailto"],
@@ -119,6 +170,7 @@ export function cleanRichText(input: string): string {
     },
     transformTags: {
       a: transformLink,
+      div: transformAttachmentContainer,
     },
   }).trim();
 }

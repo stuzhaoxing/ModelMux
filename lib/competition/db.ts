@@ -10,7 +10,7 @@ declare global {
   var __modelmuxCompetitionSchemaVersion: number | undefined;
 }
 
-const competitionSchemaVersion = 14;
+const competitionSchemaVersion = 16;
 
 const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS competition_users (
@@ -75,6 +75,17 @@ const schemaStatements = [
   `INSERT IGNORE INTO competition_control
      (id, status, duration_minutes, started_at, ends_at, stopped_at)
    VALUES (1, 'not_started', 90, NULL, NULL, NULL)`,
+  `CREATE TABLE IF NOT EXISTS competition_screen_notice (
+    id TINYINT UNSIGNED NOT NULL,
+    title VARCHAR(80) NOT NULL,
+    content_text TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
+  `INSERT IGNORE INTO competition_screen_notice
+     (id, title, content_text, enabled)
+   VALUES (1, '赛前提醒', '', FALSE)`,
   `CREATE TABLE IF NOT EXISTS competition_answers (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     question_id BIGINT UNSIGNED NOT NULL,
@@ -135,6 +146,13 @@ const schemaStatements = [
     KEY competition_events_created_at (created_at),
     CONSTRAINT competition_events_question_fk FOREIGN KEY (question_id)
       REFERENCES competition_questions(id) ON DELETE CASCADE
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
+  `CREATE TABLE IF NOT EXISTS competition_token_minutes (
+    minute_at DATETIME NOT NULL,
+    input_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    output_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    total_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (minute_at)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
 ];
 

@@ -12,6 +12,8 @@ import {
   type ClientIdentity,
 } from "./security";
 import { gatewayServiceState } from "./service-state";
+import { recordCompetitionTokenUsage } from "../competition/repository";
+import { meterTokenUsage } from "./token-usage";
 import type {
   GatewayConfig,
   ModelRouteGroup,
@@ -88,9 +90,19 @@ function providerPayload(
   model: ModelRouteGroup,
   route: ProviderRoute,
 ): Record<string, unknown> {
-  return route.upstreamModel === model.alias
-    ? payload
+  const routedPayload: Record<string, unknown> = route.upstreamModel === model.alias
+    ? { ...payload }
     : { ...payload, model: route.upstreamModel };
+  if (routedPayload.stream === true) {
+    const streamOptions = routedPayload.stream_options;
+    routedPayload.stream_options = {
+      ...(streamOptions && typeof streamOptions === "object" && !Array.isArray(streamOptions)
+        ? streamOptions as Record<string, unknown>
+        : {}),
+      include_usage: true,
+    };
+  }
+  return routedPayload;
 }
 
 function preparePayload(
@@ -263,8 +275,15 @@ async function proxyChatCompletionsForClient(
       const headers = responseHeaders(upstream);
       headers.set("X-ModelMux-Request-Id", requestId);
       headers.set("X-ModelMux-Provider", route.provider);
+      const responseBody = upstream.ok && upstream.body && client.contestantId !== null
+        ? meterTokenUsage(
+            upstream.body,
+            prepared.payload.stream === true,
+            recordCompetitionTokenUsage,
+          )
+        : upstream.body;
       return withCors(
-        new Response(upstream.body, { status: upstream.status, headers }),
+        new Response(responseBody, { status: upstream.status, headers }),
         request,
         config,
       );

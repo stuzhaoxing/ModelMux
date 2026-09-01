@@ -48,9 +48,11 @@ function bounded(value: number, minimum: number, maximum: number): number {
 export function PreviewableRichContent({
   html,
   className = "",
+  imageLabel = "题目图片",
 }: {
   html: string;
   className?: string;
+  imageLabel?: string;
 }) {
   const contentRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -134,18 +136,18 @@ export function PreviewableRichContent({
     setZoom(1);
     setPosition({ x: 0, y: 0 });
     setImageReady(false);
-    setPreview({ src, alt: image.alt.trim() || "题目图片" });
-  }, []);
+    setPreview({ src, alt: image.alt.trim() || imageLabel });
+  }, [imageLabel]);
 
   useEffect(() => {
     const images = contentRef.current?.querySelectorAll("img") ?? [];
     for (const image of images) {
       image.tabIndex = 0;
       image.setAttribute("role", "button");
-      image.setAttribute("aria-label", `全屏预览${image.alt.trim() ? `：${image.alt.trim()}` : "题目图片"}`);
+      image.setAttribute("aria-label", `全屏预览${image.alt.trim() ? `：${image.alt.trim()}` : imageLabel}`);
       if (!image.title) image.title = "全屏预览图片";
     }
-  }, [renderedHtml]);
+  }, [imageLabel, renderedHtml]);
 
   useEffect(() => {
     if (!preview) return;
@@ -309,7 +311,7 @@ export function PreviewableRichContent({
             onPointerUp={finishDrag}
             onPointerCancel={finishDrag}
           >
-            {/* The protected media route needs the contestant's browser session cookie. */}
+            {/* The protected media route needs the current signed-in browser session. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               ref={previewImageRef}

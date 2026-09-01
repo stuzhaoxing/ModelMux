@@ -23,14 +23,24 @@ describe("competition rich text", () => {
 
   it("keeps uploaded attachment cards and their download metadata", () => {
     const html = cleanRichText(
-      '<a class="rich-attachment" href="/api/competition/media/21" data-attachment-id="21" data-attachment-name="考核材料.pdf" data-attachment-size="7340032" data-attachment-type="application/pdf"><span class="attachment-type">PDF</span><span class="attachment-details"><strong>考核材料.pdf</strong><small>7 MB</small></span><span class="attachment-download">下载</span></a>',
+      '<div class="rich-attachment" data-attachment-id="21" data-attachment-name="考核材料.pdf" data-attachment-size="7340032" data-attachment-type="application/pdf"><span class="attachment-type">PDF</span><span class="attachment-details"><strong>考核材料.pdf</strong><small>7 MB</small></span><a class="attachment-download" href="/api/competition/media/21" download="考核材料.pdf">下载</a></div>',
     );
 
-    expect(html).toContain('class="rich-attachment"');
+    expect(html).toContain('<div class="rich-attachment"');
+    expect(html).toContain('class="attachment-download"');
     expect(html).toContain('href="/api/competition/media/21"');
     expect(html).toContain('download="考核材料.pdf"');
     expect(html).toContain('data-attachment-size="7340032"');
     expect(richTextHasContent(html)).toBe(true);
+  });
+
+  it("keeps legacy whole-card links readable for editor migration", () => {
+    const html = cleanRichText(
+      '<a class="rich-attachment" href="/api/competition/media/21" data-attachment-id="21" data-attachment-name="旧附件.pdf" data-attachment-size="2048" data-attachment-type="application/pdf"><span class="attachment-download">下载</span></a>',
+    );
+
+    expect(html).toContain('<a href="/api/competition/media/21" class="rich-attachment"');
+    expect(html).toContain('download="旧附件.pdf"');
   });
 
   it("does not preserve forged external attachment cards", () => {

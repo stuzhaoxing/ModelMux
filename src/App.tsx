@@ -14,6 +14,7 @@ import {
   Gauge,
   Globe2,
   KeyRound,
+  ListTree,
   LogOut,
   Network,
   Power,
@@ -34,6 +35,7 @@ import {
   adminViewPaths,
   type AdminViewId,
   isAdminJudgeViewId,
+  isAdminQuestionManagementViewId,
 } from "@/lib/admin/navigation";
 import { SYSTEM_NAME } from "@/lib/branding";
 import type {
@@ -43,6 +45,7 @@ import type {
   RequestLog,
 } from "@/lib/gateway/types";
 import AdminAccounts from "@/src/competition/AdminAccounts";
+import JudgeActivityPage from "@/src/competition/JudgeActivityPage";
 import JudgeApp from "@/src/competition/JudgeApp";
 
 interface AdminStatusResponse {
@@ -57,12 +60,12 @@ const navItems: Array<{
   icon: LucideIcon;
   activeViews?: AdminViewId[];
 }> = [
-  { id: "overview" as const, label: "总览", icon: Gauge },
+  { id: "overview" as const, label: "网关总览", icon: Gauge },
   {
     id: "competition",
     label: "考务工作台",
     icon: Gavel,
-    activeViews: ["competition", "questions", "answers"],
+    activeViews: ["competition", "questions", "answers", "activity"],
   },
   { id: "accounts" as const, label: "选手账号", icon: UserCog },
   { id: "models" as const, label: "模型路由", icon: Router },
@@ -75,6 +78,7 @@ const viewTitles: Record<AdminViewId, string> = {
   competition: "考务工作台",
   questions: "题目管理",
   answers: "答卷查看",
+  activity: "现场日志",
   accounts: "选手账号",
   models: "模型路由",
   logs: "调用日志",
@@ -230,6 +234,54 @@ export default function App() {
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = item.activeViews?.includes(activeView) ?? activeView === item.id;
+            if (item.id === "competition") {
+              const questionManagementActive = isAdminQuestionManagementViewId(activeView);
+              return (
+                <div className="nav-group" key={item.id}>
+                  <Link
+                    aria-label={item.label}
+                    className={active ? "nav-item current-group" : "nav-item"}
+                    href={adminViewPaths.competition}
+                    title={item.label}
+                  >
+                    <Icon size={18} strokeWidth={1.8} />
+                    <span>{item.label}</span>
+                  </Link>
+                  <div className="nav-submenu" aria-label="考务工作台二级导航">
+                    <Link
+                      aria-current={activeView === "competition" ? "page" : undefined}
+                      aria-label="考务总览"
+                      className={activeView === "competition" ? "nav-subitem active" : "nav-subitem"}
+                      href={adminViewPaths.competition}
+                      title="总览"
+                    >
+                      <Activity size={15} strokeWidth={1.8} />
+                      <span>总览</span>
+                    </Link>
+                    <Link
+                      aria-current={questionManagementActive ? "page" : undefined}
+                      aria-label="题目管理"
+                      className={questionManagementActive ? "nav-subitem active" : "nav-subitem"}
+                      href={adminViewPaths.questions}
+                      title="题目管理"
+                    >
+                      <BookOpenText size={15} strokeWidth={1.8} />
+                      <span>题目管理</span>
+                    </Link>
+                    <Link
+                      aria-current={activeView === "activity" ? "page" : undefined}
+                      aria-label="现场日志"
+                      className={activeView === "activity" ? "nav-subitem active" : "nav-subitem"}
+                      href={adminViewPaths.activity}
+                      title="现场日志"
+                    >
+                      <ListTree size={15} strokeWidth={1.8} />
+                      <span>现场日志</span>
+                    </Link>
+                  </div>
+                </div>
+              );
+            }
             return (
               <Link
                 aria-current={active ? "page" : undefined}
@@ -294,7 +346,7 @@ export default function App() {
           </div>
         </header>
 
-        <div className={`page-content ${judgeViewActive ? "judge-page-content" : ""}`}>
+        <div className={`page-content ${judgeViewActive ? "judge-page-content" : ""} ${activeView === "activity" ? "activity-page-content" : ""}`}>
           {error && (
             <div className="error-banner" role="alert">
               <CircleAlert size={17} />
@@ -318,6 +370,7 @@ export default function App() {
                 />
               )}
               {judgeViewActive && <JudgeApp />}
+              {activeView === "activity" && <JudgeActivityPage />}
               {activeView === "accounts" && <AdminAccounts />}
               {activeView === "models" && <ModelsView gateway={gateway} />}
               {activeView === "logs" && <LogsView logs={status.logs} />}

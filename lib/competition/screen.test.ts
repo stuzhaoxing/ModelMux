@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   rows: vi.fn(),
   operationModeState: vi.fn(),
   getCompetitionControl: vi.fn(),
+  getCompetitionScreenNotice: vi.fn(),
 }));
 
 vi.mock("./db", () => ({ rows: mocks.rows }));
@@ -12,6 +13,7 @@ vi.mock("@/lib/gateway/operation-mode", () => ({
 }));
 vi.mock("./repository", () => ({
   getCompetitionControl: mocks.getCompetitionControl,
+  getCompetitionScreenNotice: mocks.getCompetitionScreenNotice,
 }));
 
 import { getCompetitionScreenSnapshot } from "./screen";
@@ -20,6 +22,12 @@ describe("competition screen runtime countdown", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.operationModeState.mockResolvedValue({ mode: "competition" });
+    mocks.getCompetitionScreenNotice.mockResolvedValue({
+      title: "接口信息",
+      content: "http://10.0.0.8:1444/v1",
+      enabled: true,
+      updatedAt: "2026-08-25 15:50:00.000",
+    });
   });
 
   it("starts the screen countdown from the shared batch publication time", async () => {
@@ -39,8 +47,11 @@ describe("competition screen runtime countdown", () => {
         competition_ended_at: null,
       }])
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce([{ total_tokens: 321 }])
+      .mockResolvedValueOnce([{
+        minute_at: "2026-08-25 16:14:00",
+        total_tokens: 321,
+      }]);
 
     const snapshot = await getCompetitionScreenSnapshot(
       { ...process.env, MODELMUX_COMPETITION_DURATION_MINUTES: "90" },
@@ -53,11 +64,14 @@ describe("competition screen runtime countdown", () => {
       endAt: "2026-08-25T09:30:00.000Z",
     });
     expect(snapshot.stage).toBe("live");
+    expect(snapshot.notice).toMatchObject({ title: "接口信息", enabled: true });
     expect(snapshot.summary).toMatchObject({
       questionTotal: 3,
       publishedQuestions: 3,
       closedQuestions: 0,
+      totalTokens: 321,
     });
+    expect(snapshot.tokenMinutes.at(-2)).toBe(321);
   });
 
   it("keeps the screen waiting until the question set is published", async () => {
@@ -91,5 +105,6 @@ describe("competition screen runtime countdown", () => {
 
     expect(snapshot.schedule.configured).toBe(false);
     expect(snapshot.stage).toBe("setup");
+    expect(snapshot.notice.content).toBe("http://10.0.0.8:1444/v1");
   });
 });

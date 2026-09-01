@@ -145,6 +145,50 @@
   text-shadow: 0 1px 4px rgba(0, 35, 74, .72);
 }
 
+.eventSubtitleLine,
+.eventStage,
+.eventCountdownMeta,
+.tokenFlowHeader,
+.tokenFlowTitle,
+.tokenFlowTotal {
+  display: flex;
+  align-items: center;
+}
+
+.eventSubtitleLine { justify-content: center; gap: 18px; }
+.eventStage { gap: 7px; color: rgba(240, 252, 255, .92); font-size: 15px; white-space: nowrap; }
+.eventStage i { width: 8px; height: 8px; background: #9ee7f0; border-radius: 50%; }
+.eventStage strong { font-size: inherit; }
+.eventStage small { padding-left: 8px; color: rgba(240, 252, 255, .72); border-left: 1px solid rgba(255, 255, 255, .32); font-size: 13px; }
+
+.screen .eventMasthead {
+  grid-template-columns: minmax(0, 1fr) minmax(390px, auto);
+  height: 104px;
+  padding: 0 38px;
+}
+
+.screen .eventTitles {
+  grid-column: 1;
+  text-align: left;
+}
+
+.screen .eventTitles h1 { font-size: 40px; }
+.screen .eventTitles p { margin-top: 0; font-size: 17px; }
+.screen .eventSubtitleLine { justify-content: flex-start; margin-top: 7px; }
+
+.eventCountdown {
+  position: relative;
+  z-index: 2;
+  grid-column: 2;
+  justify-self: end;
+  min-width: 390px;
+  text-align: right;
+}
+
+.eventCountdownMeta { justify-content: flex-end; gap: 16px; color: rgba(241, 252, 255, .84); font-size: 14px; }
+.eventCountdownMeta small { padding-left: 16px; color: rgba(241, 252, 255, .66); border-left: 1px solid rgba(255, 255, 255, .3); font-size: 12px; }
+.eventCountdown > strong { display: block; margin-top: 5px; color: #fff; font: 800 44px/1 "SFMono-Regular", Consolas, monospace; text-shadow: 0 2px 8px rgba(0, 42, 82, .58); white-space: nowrap; }
+
 .currentTime {
   position: relative;
   z-index: 2;
@@ -162,7 +206,7 @@
 .contentFrame {
   position: absolute;
   z-index: 10;
-  top: 138px;
+  top: 104px;
   right: 0;
   bottom: 0;
   left: 0;
@@ -196,8 +240,6 @@
   border-top: 3px solid var(--screen-blue);
 }
 
-.centerStatus,
-.stageSummary > span,
 .rosterHeading,
 .rosterHeading > span,
 .legend,
@@ -209,42 +251,8 @@
   align-items: center;
 }
 
-.centerStatus {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, .72fr);
-  flex: 0 0 104px;
-  gap: 30px;
-  padding: 10px 28px;
-  background: #0c6090;
-  border-bottom: 1px solid #084d76;
-  overflow: hidden;
-}
-
-.centerStatus > div { position: relative; z-index: 2; min-width: 0; }
-.centerStatusCity { position: absolute; z-index: 1; right: 24%; bottom: -42px; width: 460px; height: auto; opacity: .25; pointer-events: none; }
-.stageSummary { padding-left: 18px; border-left: 4px solid #8bd8ef; }
-.stageSummary > span { gap: 10px; color: #fff; font-size: 26px; font-weight: 760; }
-.stageSummary svg { width: 24px; height: 24px; color: #a4e7f2; }
-.stageSummary small { display: block; margin-top: 8px; color: rgba(235, 250, 255, .78); font-size: 17px; }
-.screen[data-stage="live"] .stageSummary { border-left-color: var(--screen-green); }
-.screen[data-stage="live"] .stageSummary svg { color: #86e9b2; }
-.screen[data-stage="finished"] .stageSummary { border-left-color: var(--screen-blue-deep); }
-
-.countdown {
-  justify-self: end;
-  width: 100%;
-  padding-right: 4px;
-  text-align: right;
-}
-
-.countdown span,
-.countdown strong { display: block; }
-.countdown span { color: rgba(235, 250, 255, .78); font-size: 16px; }
-.countdown strong { min-width: 8ch; margin-top: 7px; color: #fff; font: 800 50px/1 "SFMono-Regular", Consolas, monospace; text-shadow: 0 2px 8px rgba(1, 39, 63, .28); white-space: nowrap; }
-
 .rosterHeading {
-  flex: 0 0 54px;
+  flex: 0 0 50px;
   justify-content: space-between;
   gap: 18px;
   color: var(--screen-ink);
@@ -333,6 +341,113 @@
 .seatStats small { color: var(--screen-muted); font-size: 16px; }
 .seatStats strong { margin-top: 5px; overflow: hidden; color: var(--screen-blue-deep); font: 740 21px/1 "SFMono-Regular", Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
 
+.tokenFlowPanel {
+  position: relative;
+  flex: 0 0 148px;
+  min-height: 0;
+  margin: 0 -38px -32px;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(7, 89, 143, .94), rgba(7, 89, 143, .82));
+  border: 0;
+}
+
+.tokenFlowPanel::before {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  opacity: .22;
+  background: repeating-radial-gradient(ellipse 58% 145% at 50% 118%, transparent 0 17px, rgba(172, 239, 241, .34) 18px 19px);
+  content: "";
+  pointer-events: none;
+}
+
+.tokenFlowScenery {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 44%;
+  opacity: .34;
+  filter: saturate(1.08);
+  pointer-events: none;
+}
+
+.tokenFlowHeader { position: absolute; z-index: 3; inset: 0; pointer-events: none; }
+.tokenFlowTitle { position: absolute; top: 18px; left: 18px; gap: 9px; color: #fff; }
+.tokenFlowTitle svg { width: 21px; height: 21px; color: #8ee4ec; }
+.tokenFlowTitle strong { font-size: 20px; }
+.tokenFlowTotal { position: absolute; top: 17px; right: 20px; gap: 10px; color: var(--screen-muted); line-height: 1; }
+.tokenFlowTotal strong { color: #fff; font: 800 38px/1 "SFMono-Regular", Consolas, monospace; text-shadow: 0 2px 8px rgba(0, 29, 55, .38); }
+.tokenFlowTotal small { color: #a8f0d0; font-size: 17px; font-weight: 700; }
+.tokenFlowChart { position: absolute; z-index: 2; inset: 0; overflow: hidden; }
+.tokenFlowChart svg { display: block; width: 100%; height: 100%; }
+.tokenFlowGrid { fill: none; stroke: rgba(220, 249, 250, .16); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.tokenMinuteBar { fill: url("#token-minute-fill"); opacity: .72; transform: scaleY(var(--token-bar-scale)); transform-box: fill-box; transform-origin: center bottom; transition: transform .8s cubic-bezier(.22, 1, .36, 1), opacity .3s ease; animation: tokenBarReveal .5s ease-out var(--token-bar-delay) backwards; will-change: transform; }
+.tokenFlowPanel[data-active="true"] .tokenMinuteBar { opacity: .94; }
+
+.preStartNoticeLayer {
+  position: absolute;
+  z-index: 40;
+  top: 104px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  padding: 42px;
+  background: rgba(2, 36, 65, .82);
+}
+
+.preStartNoticeDialog {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  width: min(1500px, 94%);
+  max-height: 100%;
+  min-height: min(620px, 84%);
+  padding: 48px 68px 54px;
+  overflow: hidden;
+  color: #143d58;
+  background: rgba(248, 254, 255, .99);
+  border: 2px solid rgba(127, 221, 232, .85);
+  border-radius: 6px;
+  box-shadow: 0 24px 70px rgba(0, 22, 46, .42);
+  text-align: center;
+}
+
+.preStartNoticeDialog::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 10px;
+  background: #1685b5;
+  content: "";
+}
+
+.preStartNoticeLabel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #1675a0;
+  font-size: 23px;
+  font-weight: 780;
+}
+
+.preStartNoticeLabel svg { width: 27px; height: 27px; }
+.preStartNoticeDialog h2 { margin: 18px 0 0; color: #0c3c5e; font-size: 44px; line-height: 1.18; }
+.preStartNoticeContent { display: grid; width: 100%; margin-top: 36px; overflow: auto; gap: 18px; overscroll-behavior: contain; }
+.preStartNoticeContent p { margin: 0; overflow-wrap: anywhere; color: #173b50; font-weight: 780; line-height: 1.24; white-space: pre-wrap; }
+.preStartNoticeDialog[data-density="huge"] .preStartNoticeContent p { font-size: 64px; }
+.preStartNoticeDialog[data-density="large"] .preStartNoticeContent p { font-size: 50px; }
+.preStartNoticeDialog[data-density="medium"] .preStartNoticeContent p { font-size: 40px; }
+.preStartNoticeDialog[data-density="compact"] .preStartNoticeContent p { font-size: 31px; }
+.preStartNoticeContent p[data-url="true"] { color: #075f8b; font-family: "SFMono-Regular", Consolas, monospace; font-weight: 820; }
+
 .roster[data-density="compact"] { gap: 7px; }
 .roster[data-density="compact"] .contestantSeat { padding: 6px 8px; }
 .roster[data-density="compact"] .seatIdentity { gap: 7px; }
@@ -415,6 +530,8 @@
   50% { opacity: .55; transform: scale(.88); }
 }
 
+@keyframes tokenBarReveal { from { opacity: 0; } }
+
 
 @keyframes seatProgressUpdated {
   0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--seat-status) 50%, transparent), 0 4px 12px rgba(22, 94, 116, .13); transform: translateY(0); }
@@ -422,7 +539,7 @@
   100% { box-shadow: 0 0 0 0 transparent, 0 4px 12px rgba(22, 94, 116, .13); transform: translateY(0); }
 }
 
-.screen[data-stage="live"] .stageSummary svg,
+.screen[data-stage="live"] .eventStage i,
 .unavailableSignal svg { animation: signalPulse 1.8s ease-in-out infinite; }
 
 @media (max-width: 1439px) {
@@ -431,6 +548,8 @@
   .eventTitles p { font-size: 18px; }
   .currentTime { min-width: 160px; }
   .currentTime strong { font-size: 27px; }
+  .screen .eventTitles h1 { font-size: 36px; }
+  .eventCountdown > strong { font-size: 40px; }
 }
 
 @media (max-width: 1179px) {
@@ -441,7 +560,21 @@
   .currentTime span { font-size: 11px; }
   .currentTime strong { font-size: 23px; }
   .centerStage { padding-right: 26px; padding-left: 26px; }
-  .centerStatus { grid-template-columns: minmax(0, 1fr) minmax(300px, .65fr); gap: 12px; padding-right: 14px; padding-left: 14px; }
+  .screen .eventMasthead { grid-template-columns: minmax(0, 1fr) minmax(330px, auto); padding-right: 24px; padding-left: 24px; }
+  .screen .eventTitles h1 { font-size: 31px; }
+  .screen .eventTitles p { font-size: 14px; }
+  .eventStage { font-size: 13px; }
+  .eventStage small { font-size: 11px; }
+  .eventCountdown { min-width: 330px; }
+  .eventCountdown > strong { font-size: 35px; }
+  .tokenFlowPanel { margin-right: -26px; margin-left: -26px; }
+  .preStartNoticeLayer { padding: 28px; }
+  .preStartNoticeDialog { width: 96%; padding-right: 42px; padding-left: 42px; }
+  .preStartNoticeDialog h2 { font-size: 36px; }
+  .preStartNoticeDialog[data-density="huge"] .preStartNoticeContent p { font-size: 52px; }
+  .preStartNoticeDialog[data-density="large"] .preStartNoticeContent p { font-size: 43px; }
+  .preStartNoticeDialog[data-density="medium"] .preStartNoticeContent p { font-size: 35px; }
+  .preStartNoticeDialog[data-density="compact"] .preStartNoticeContent p { font-size: 28px; }
 }
 
 @media (min-height: 801px) and (max-height: 1050px) and (min-width: 880px) {
@@ -457,20 +590,31 @@
   .seatStats > span { padding: 2px 8px; }
   .seatStats small { font-size: 14px; line-height: 1.1; }
   .seatStats strong { margin-top: 3px; font-size: 18px; }
+  .tokenFlowPanel { flex-basis: 132px; }
 }
 
 @media (max-height: 800px) and (min-width: 880px) {
-  .eventMasthead { height: 96px; }
-  .eventTitles h1 { font-size: 36px; }
-  .eventTitles p { margin-top: 5px; font-size: 16px; }
-  .currentTime strong { font-size: 24px; }
-  .contentFrame { top: 104px; bottom: 0; }
+  .screen .eventMasthead { height: 84px; }
+  .screen .eventTitles h1 { font-size: 31px; }
+  .screen .eventTitles p { margin-top: 0; font-size: 13px; }
+  .screen .eventSubtitleLine { margin-top: 4px; }
+  .eventStage { font-size: 12px; }
+  .eventStage small { font-size: 10px; }
+  .eventCountdownMeta { font-size: 12px; }
+  .eventCountdownMeta small { font-size: 10px; }
+  .eventCountdown > strong { margin-top: 3px; font-size: 34px; }
+  .contentFrame { top: 84px; bottom: 0; }
+  .preStartNoticeLayer { top: 84px; padding: 22px 34px; }
+  .preStartNoticeDialog { min-height: 0; height: 100%; padding: 28px 54px 32px; }
+  .preStartNoticeLabel { font-size: 18px; }
+  .preStartNoticeLabel svg { width: 22px; height: 22px; }
+  .preStartNoticeDialog h2 { margin-top: 10px; font-size: 34px; }
+  .preStartNoticeContent { margin-top: 22px; gap: 12px; }
+  .preStartNoticeDialog[data-density="huge"] .preStartNoticeContent p { font-size: 48px; }
+  .preStartNoticeDialog[data-density="large"] .preStartNoticeContent p { font-size: 39px; }
+  .preStartNoticeDialog[data-density="medium"] .preStartNoticeContent p { font-size: 31px; }
+  .preStartNoticeDialog[data-density="compact"] .preStartNoticeContent p { font-size: 25px; }
   .centerStage { padding-right: 33px; padding-bottom: 18px; padding-left: 33px; }
-  .centerStatus { flex-basis: 82px; padding-top: 6px; padding-bottom: 6px; }
-  .stageSummary > span { font-size: 21px; }
-  .stageSummary small { margin-top: 4px; font-size: 14px; }
-  .countdown span { font-size: 13px; }
-  .countdown strong { margin-top: 4px; font-size: 38px; }
   .rosterHeading { flex-basis: 42px; }
   .rosterHeading > span { font-size: 17px; }
   .legend { gap: 14px; font-size: 14px; }
@@ -505,6 +649,12 @@
   .roster[data-density="dense"] .seatStats small { font-size: 9px; }
   .roster[data-density="compact"] .seatStats strong,
   .roster[data-density="dense"] .seatStats strong { margin-top: 1px; font-size: 13px; }
+  .tokenFlowPanel { flex-basis: 108px; margin: 0 -33px -18px; }
+  .tokenFlowTitle { top: 12px; left: 12px; }
+  .tokenFlowTitle strong { font-size: 16px; }
+  .tokenFlowTotal { top: 11px; right: 12px; }
+  .tokenFlowTotal strong { font-size: 30px; }
+  .tokenFlowTotal small { font-size: 14px; }
   .loginPanel { margin-top: 72px; }
   .loginPanelHeader { height: 66px; }
   .loginForm { margin-top: 22px; margin-bottom: 26px; }
@@ -512,6 +662,7 @@
 
 @media (max-width: 1179px) and (max-height: 800px) and (min-width: 880px) {
   .centerStage { padding-right: 21px; padding-left: 21px; }
+  .tokenFlowPanel { margin-right: -21px; margin-left: -21px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

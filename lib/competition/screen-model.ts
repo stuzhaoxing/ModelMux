@@ -1,5 +1,9 @@
 import type { OperationMode } from "@/lib/gateway/operation-mode";
-import type { CompetitionControl, CompetitionControlState } from "./types";
+import type {
+  CompetitionControl,
+  CompetitionControlState,
+  CompetitionScreenNotice,
+} from "./types";
 
 export type CompetitionScreenStage =
   | "setup"
@@ -44,6 +48,7 @@ export interface CompetitionScreenSummary {
   unfinished: number;
   drafting: number;
   notStarted: number;
+  totalTokens: number;
 }
 
 export interface CompetitionScreenSnapshot {
@@ -52,7 +57,9 @@ export interface CompetitionScreenSnapshot {
   stage: CompetitionScreenStage;
   schedule: CompetitionScreenSchedule;
   competition: CompetitionControl;
+  notice: CompetitionScreenNotice;
   summary: CompetitionScreenSummary;
+  tokenMinutes: number[];
   contestants: CompetitionScreenContestant[];
   simulation: CompetitionScreenSimulation | null;
 }
@@ -268,4 +275,35 @@ export function competitionScreenProgressChanges(
       questionTotal: next.summary.questionTotal,
     }] : [];
   });
+}
+
+export function competitionScreenTokenBarScales(input: {
+  tokenMinutes: number[];
+  maxMinuteTokens: number;
+  count?: number;
+}): number[] {
+  const count = Math.max(1, Math.min(90, Math.floor(input.count ?? 90)));
+  const recent = input.tokenMinutes.slice(-count);
+  const padded = [...Array<number>(count - recent.length).fill(0), ...recent];
+  return padded.map((value) => input.maxMinuteTokens > 0
+    ? Math.max(0, Math.min(1, value / input.maxMinuteTokens))
+    : 0);
+}
+
+export function competitionScreenNoticeVisible(input: {
+  competitionState: CompetitionControlState;
+  notice: CompetitionScreenNotice;
+}): boolean {
+  return input.competitionState === "not_started"
+    && input.notice.enabled
+    && input.notice.content.trim().length > 0;
+}
+
+export function competitionMockTokenMinute(tick: number): number {
+  const safeTick = Number.isFinite(tick) ? Math.max(0, Math.floor(tick)) : 0;
+  const wave = 46_000_000
+    + Math.sin(safeTick * .72) * 18_000_000
+    + Math.sin(safeTick * .21) * 9_500_000
+    + (safeTick % 9 === 0 ? 22_000_000 : 0);
+  return Math.max(6_000_000, Math.round(wave / 100_000) * 100_000);
 }

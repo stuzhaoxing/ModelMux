@@ -115,6 +115,10 @@ function elementMediaId(element: Element): number | null {
   return storedMediaId(element.attribs.src ?? element.attribs.href ?? "");
 }
 
+function isAttachmentElement(element: Element): boolean {
+  return element.attribs.class?.split(/\s+/).includes("rich-attachment") ?? false;
+}
+
 function inlineNodes(nodes: ChildNode[], marks: Omit<Extract<Inline, { kind: "text" }>, "kind" | "value"> = {}): Inline[] {
   const result: Inline[] = [];
   for (const node of nodes) {
@@ -128,7 +132,7 @@ function inlineNodes(nodes: ChildNode[], marks: Omit<Extract<Inline, { kind: "te
     const tag = element.name.toLowerCase();
     if (tag === "br") {
       result.push({ kind: "text", value: "\n", ...marks });
-    } else if (tag === "a" && element.attribs.class?.split(/\s+/).includes("rich-attachment")) {
+    } else if (isAttachmentElement(element)) {
       const mediaId = elementMediaId(element);
       if (mediaId) {
         result.push({
@@ -183,7 +187,7 @@ export function parseExportBlocks(html: string): ExportBlock[] {
         blocks.push({ kind: "rule" });
       } else if (tag === "img") {
         blocks.push({ kind: "image", alt: element.attribs.alt?.trim() || "图片", mediaId: elementMediaId(element) });
-      } else if (tag === "a" && element.attribs.class?.split(/\s+/).includes("rich-attachment")) {
+      } else if (isAttachmentElement(element)) {
         const inlines = inlineNodes([element]);
         if (inlines.length) blocks.push({ kind: "paragraph", inlines });
       } else if (["p", "div", "section"].includes(tag)) {

@@ -74,7 +74,7 @@ export function competitionError(error: unknown): NextResponse {
   if (code === "question_set_empty") return NextResponse.json({ error: "请先保存至少一道题目" }, { status: 409 });
   if (code === "question_set_published") return NextResponse.json({ error: "题目已经统一发布，不能再次发布或新增" }, { status: 409 });
   if (code === "question_set_conflict") return NextResponse.json({ error: "题目集刚刚发生变化，请刷新后重试" }, { status: 409 });
-  if (code === "competition_running") return NextResponse.json({ error: "比赛进行中不能删除题目，请先停止比赛" }, { status: 409 });
+  if (code === "competition_running") return NextResponse.json({ error: "比赛进行中不能管理题目，请先停止比赛" }, { status: 409 });
   if (code === "competition_not_running") return NextResponse.json({ error: "比赛当前不在进行中" }, { status: 409 });
   if (code === "competition_control_missing") return NextResponse.json({ error: "比赛状态尚未初始化" }, { status: 503 });
   if (code === "export_font_missing") return NextResponse.json({ error: "服务器尚未配置中文 PDF 导出字体" }, { status: 503 });
