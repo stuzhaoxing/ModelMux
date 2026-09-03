@@ -4,7 +4,7 @@
 #
 # 服务器只负责运行，所有构建都在本地完成。
 # 服务器密码放在 .deploy.local（已被 .gitignore 的 *.local 规则忽略），
-# 或通过环境变量 SERVER_PASS 传入。
+# 或通过项目专用环境变量 MODELMUX_DEPLOY_PASSWORD 传入。
 
 set -euo pipefail
 
@@ -22,7 +22,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # 密码：优先环境变量，其次 .deploy.local
-if [ -z "${SERVER_PASS:-}" ] && [ -f "$SCRIPT_DIR/.deploy.local" ]; then
+if [ -z "${MODELMUX_DEPLOY_PASSWORD:-}" ] && [ -f "$SCRIPT_DIR/.deploy.local" ]; then
     # shellcheck disable=SC1091
     . "$SCRIPT_DIR/.deploy.local"
 fi
@@ -54,6 +54,19 @@ for arg in "$@"; do
 done
 
 PKG="/tmp/modelmux-deploy.tar.gz"
+SSH_CONTROL_PATH="/tmp/modelmux-ssh-${UID}-$$"
+SSH_OPTIONS=(
+    -o StrictHostKeyChecking=no
+    -o UserKnownHostsFile=/dev/null
+    -o LogLevel=ERROR
+    -o PubkeyAuthentication=no
+    -o PreferredAuthentications=password,keyboard-interactive
+    -o ConnectTimeout=25
+    -o ServerAliveInterval=15
+    -o "Port=$SERVER_PORT"
+    -o "ControlPath=$SSH_CONTROL_PATH"
+    -o ControlMaster=auto
+)
 
 # ========== 预检 ==========
 preflight() {
@@ -67,10 +80,10 @@ preflight() {
         log_error "pnpm 未安装，请先执行: corepack enable && corepack prepare pnpm@11.9.0 --activate"
         exit 1
     fi
-    if [ -z "${SERVER_PASS:-}" ]; then
+    if [ -z "${MODELMUX_DEPLOY_PASSWORD:-}" ]; then
         log_error "未找到服务器密码。请创建 $SCRIPT_DIR/.deploy.local，内容为:"
-        log_error "    SERVER_PASS='你的root密码'"
-        log_error "或者临时使用: SERVER_PASS='...' ./deploy.sh"
+        log_error "    MODELMUX_DEPLOY_PASSWORD='你的root密码'"
+        log_error "或者临时使用: MODELMUX_DEPLOY_PASSWORD='...' ./deploy.sh"
         exit 1
     fi
 
@@ -83,30 +96,27 @@ preflight() {
 
     log_info "本地 node $(node -v) / pnpm $(pnpm -v)"
     log_info "目标服务器 $SERVER_USER@$SERVER_HOST:$SERVER_PORT → $DEPLOY_DIR"
+
+    if ! open_ssh_master; then
+        log_error "SSH 认证失败，请检查 MODELMUX_DEPLOY_PASSWORD 和服务器登录策略"
+        exit 1
+    fi
+    log_info "SSH 认证完成，后续上传和部署将复用同一连接"
 }
 
 # ========== SSH / SCP 封装 ==========
+open_ssh_master() {
+    SSHPASS="$MODELMUX_DEPLOY_PASSWORD" sshpass -e ssh \
+        "${SSH_OPTIONS[@]}" \
+        -M -N -f "$SERVER_USER@$SERVER_HOST"
+}
+
 ssh_cmd() {
-    sshpass -p "$SERVER_PASS" ssh \
-        -o StrictHostKeyChecking=no \
-        -o UserKnownHostsFile=/dev/null \
-        -o LogLevel=ERROR \
-        -o PubkeyAuthentication=no \
-        -o PreferredAuthentications=password,keyboard-interactive \
-        -o ConnectTimeout=25 \
-        -o ServerAliveInterval=15 \
-        -p "$SERVER_PORT" "$SERVER_USER@$SERVER_HOST" "$1"
+    ssh "${SSH_OPTIONS[@]}" "$SERVER_USER@$SERVER_HOST" "$1"
 }
 
 scp_cmd() {
-    sshpass -p "$SERVER_PASS" scp \
-        -o StrictHostKeyChecking=no \
-        -o UserKnownHostsFile=/dev/null \
-        -o LogLevel=ERROR \
-        -o PubkeyAuthentication=no \
-        -o PreferredAuthentications=password,keyboard-interactive \
-        -o ConnectTimeout=25 \
-        -P "$SERVER_PORT" "$1" "$SERVER_USER@$SERVER_HOST:$2"
+    scp "${SSH_OPTIONS[@]}" "$1" "$SERVER_USER@$SERVER_HOST:$2"
 }
 
 # ========== Step 1: 本地构建 ==========
@@ -158,27 +168,50 @@ package() {
     log_step "Step 3: 打包"
     rm -f "$PKG"
 
+    # 先验证 standalone 内的 pnpm 依赖链接完整。这里只验证 JS 依赖图；
+    # Linux 原生插件会在打包清单和服务器切换版本前分别验证。
+    if ! (cd .next/standalone && node -e 'require("sharp")'); then
+        log_error "standalone 中 Sharp 依赖无法加载，已停止打包"
+        exit 1
+    fi
+
     # 排除 macOS 原生二进制：本地是 darwin-arm64，服务器是 linux-x64。
-    # sharp 仅在使用 next/image 时才加载，本项目未使用，故整体剔除（约 17MB）。
+    # 答卷导出使用 sharp 处理图片，必须保留 linux-x64 的 sharp 和 libvips。
     # --no-xattrs/--no-mac-metadata 避免 bsdtar 写入 macOS 扩展属性，
     # 否则 Linux 上 GNU tar 解包时会刷大量 LIBARCHIVE.xattr 警告
     COPYFILE_DISABLE=1 tar -czf "$PKG" \
         --no-xattrs \
         --no-mac-metadata \
         --exclude='*darwin*' \
+        --exclude='*win32*' \
+        --exclude='*linuxmusl*' \
+        --exclude='*linux-arm*' \
+        --exclude='*linux-ppc64*' \
+        --exclude='*linux-riscv64*' \
+        --exclude='*linux-s390x*' \
+        --exclude='*freebsd*' \
+        --exclude='*wasm32*' \
         --exclude='.next/cache' \
         --exclude='.DS_Store' \
         --exclude='._*' \
         .next/standalone \
         scripts/start-local.sh
 
-    # 兜底检查：确认包里没有残留的平台二进制
-    local leftover
-    leftover=$(tar -tzf "$PKG" | grep -icE 'darwin|\.node$' || true)
-    if [ "$leftover" -gt 0 ]; then
-        log_warn "包内仍有 $leftover 个平台相关文件，请检查:"
-        tar -tzf "$PKG" | grep -iE 'darwin|\.node$' | head -5
+    # 兜底检查：不得携带 macOS 产物，且 Linux Sharp 的插件和 libvips 必须齐全。
+    local darwin_files linux_sharp_files linux_libvips_files
+    darwin_files=$(tar -tzf "$PKG" | grep -ic 'darwin' || true)
+    linux_sharp_files=$(tar -tzf "$PKG" | grep -cE '/@img/sharp-linux-x64/.*/sharp-linux-x64[^/]*\.node$' || true)
+    linux_libvips_files=$(tar -tzf "$PKG" | grep -cE '/@img/sharp-libvips-linux-x64/.*/libvips-cpp\.so' || true)
+    if [ "$darwin_files" -gt 0 ]; then
+        log_error "部署包仍包含 $darwin_files 个 macOS 文件，已停止上传"
+        exit 1
     fi
+    if [ "$linux_sharp_files" -lt 1 ] || [ "$linux_libvips_files" -lt 1 ]; then
+        log_error "部署包缺少 Linux x64 Sharp 运行时，已停止上传"
+        log_error "sharp addon=$linux_sharp_files, libvips=$linux_libvips_files"
+        exit 1
+    fi
+    log_info "Sharp 依赖与 Linux x64 原生文件校验通过"
 
     log_info "打包完成: $(ls -lh "$PKG" | awk '{print $5}')"
 }
@@ -194,79 +227,100 @@ upload() {
 remote_deploy() {
     log_step "Step 5: 服务器端部署"
 
-    ssh_cmd "
-        set -e
-        DEPLOY_DIR='$DEPLOY_DIR'
-        APP_USER='$APP_USER'
-        SERVICE_NAME='$SERVICE_NAME'
-        APP_PORT='$APP_PORT'
+    local remote_command
+    printf -v remote_command 'bash -s -- %q %q %q %q' \
+        "$DEPLOY_DIR" "$APP_USER" "$SERVICE_NAME" "$APP_PORT"
 
-        cd \"\$DEPLOY_DIR\"
+    ssh "${SSH_OPTIONS[@]}" "$SERVER_USER@$SERVER_HOST" "$remote_command" <<'REMOTE_SCRIPT'
+set -euo pipefail
 
-        # 环境变量文件由服务器维护，部署流程绝不覆盖（内含密钥）
-        if [ ! -f .env.local ]; then
-            echo \"缺少 \$DEPLOY_DIR/.env.local，请先在服务器创建后再部署\" >&2
-            exit 1
-        fi
+DEPLOY_DIR="$1"
+APP_USER="$2"
+SERVICE_NAME="$3"
+APP_PORT="$4"
+HEALTH_FILE="/tmp/modelmux-deploy-health-$$.json"
 
-        echo '=== 备份当前版本 ==='
-        rm -rf .next.backup scripts.backup
-        [ -d .next ] && cp -a .next .next.backup || true
-        [ -d scripts ] && cp -a scripts scripts.backup || true
+rollback() {
+    systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+    rm -rf .next scripts
+    [ -d .next.backup ] && mv .next.backup .next || true
+    [ -d scripts.backup ] && mv scripts.backup scripts || true
+    systemctl start "$SERVICE_NAME" 2>/dev/null || true
+}
 
-        echo '=== 停止服务 ==='
-        systemctl stop \"\$SERVICE_NAME\" 2>/dev/null || true
+cd "$DEPLOY_DIR"
 
-        echo '=== 解压新版本 ==='
-        rm -rf .next/standalone
-        tar -xzf /tmp/modelmux-deploy.tar.gz -C \"\$DEPLOY_DIR\"
-        rm -f /tmp/modelmux-deploy.tar.gz
-        chmod +x scripts/start-local.sh
+# 环境变量文件由服务器维护，部署流程绝不覆盖（内含密钥）
+if [ ! -f .env.local ]; then
+    echo "缺少 $DEPLOY_DIR/.env.local，请先在服务器创建后再部署" >&2
+    exit 1
+fi
 
-        echo '=== 修正属主与权限 ==='
-        chown -R \"\$APP_USER:\$APP_USER\" .next scripts
-        chown \"\$APP_USER:\$APP_USER\" .env.local
-        chmod 600 .env.local
-        mkdir -p data logs
-        chown \"\$APP_USER:\$APP_USER\" data logs
-        chmod 700 data logs
+echo '=== 备份当前版本 ==='
+rm -rf .next.backup scripts.backup
+[ -d .next ] && cp -a .next .next.backup || true
+[ -d scripts ] && cp -a scripts scripts.backup || true
 
-        echo '=== 启动服务 ==='
-        systemctl daemon-reload
-        systemctl enable \"\$SERVICE_NAME\" >/dev/null 2>&1 || true
-        systemctl restart \"\$SERVICE_NAME\"
+echo '=== 停止服务 ==='
+systemctl stop "$SERVICE_NAME" 2>/dev/null || true
 
-        echo '=== 健康检查 ==='
-        OK=false
-        for i in \$(seq 1 20); do
-            sleep 2
-            CODE=\$(curl -s -o /tmp/health.json -w '%{http_code}' \"http://127.0.0.1:\$APP_PORT/health\" || echo 000)
-            # 200=就绪；503=进程正常但配置未完成（例如尚未填写供应商 Key）
-            if [ \"\$CODE\" = '200' ] || [ \"\$CODE\" = '503' ]; then
-                OK=true
-                break
-            fi
-            echo \"  等待应用启动... (\$i/20, http=\$CODE)\"
-        done
+echo '=== 解压新版本 ==='
+rm -rf .next/standalone
+tar -xzf /tmp/modelmux-deploy.tar.gz -C "$DEPLOY_DIR"
+rm -f /tmp/modelmux-deploy.tar.gz
+chmod +x scripts/start-local.sh
 
-        if [ \"\$OK\" != true ]; then
-            echo '应用启动失败，回滚到上一版本' >&2
-            journalctl -u \"\$SERVICE_NAME\" -n 40 --no-pager >&2 || true
-            systemctl stop \"\$SERVICE_NAME\" 2>/dev/null || true
-            rm -rf .next scripts
-            [ -d .next.backup ] && mv .next.backup .next || true
-            [ -d scripts.backup ] && mv scripts.backup scripts || true
-            systemctl start \"\$SERVICE_NAME\" 2>/dev/null || true
-            exit 1
-        fi
+echo '=== 修正属主与权限 ==='
+chown -R "$APP_USER:$APP_USER" .next scripts
+chown "$APP_USER:$APP_USER" .env.local
+chmod 600 .env.local
+mkdir -p data logs
+chown "$APP_USER:$APP_USER" data logs
+chmod 700 data logs
 
-        echo \"健康检查 http=\$CODE\"
-        cat /tmp/health.json; echo
-        rm -f /tmp/health.json
+echo '=== 校验 Linux Sharp 运行时 ==='
+if ! SHARP_VERSION=$(
+    cd .next/standalone &&
+    runuser -u "$APP_USER" -- node -e 'const sharp = require("sharp"); process.stdout.write(sharp.versions.sharp)'
+); then
+    echo 'Linux Sharp 运行时加载失败，回滚到上一版本' >&2
+    rollback
+    exit 1
+fi
+echo "Sharp runtime v$SHARP_VERSION"
 
-        rm -rf .next.backup scripts.backup
-        echo '=== 部署完成 ==='
-    "
+echo '=== 启动服务 ==='
+systemctl daemon-reload
+systemctl enable "$SERVICE_NAME" >/dev/null 2>&1 || true
+systemctl restart "$SERVICE_NAME"
+
+echo '=== 健康检查 ==='
+OK=false
+for i in $(seq 1 20); do
+    sleep 2
+    CODE=$(curl -s -o "$HEALTH_FILE" -w '%{http_code}' "http://127.0.0.1:$APP_PORT/health" || true)
+    # 200=就绪；503=进程正常但配置未完成（例如尚未填写供应商 Key）
+    if [ "$CODE" = '200' ] || [ "$CODE" = '503' ]; then
+        OK=true
+        break
+    fi
+    echo "  等待应用启动... ($i/20, http=${CODE:-000})"
+done
+
+if [ "$OK" != true ]; then
+    echo '应用启动失败，回滚到上一版本' >&2
+    journalctl -u "$SERVICE_NAME" -n 40 --no-pager >&2 || true
+    rollback
+    exit 1
+fi
+
+echo "健康检查 http=$CODE"
+cat "$HEALTH_FILE"; echo
+rm -f "$HEALTH_FILE"
+
+rm -rf .next.backup scripts.backup
+echo '=== 部署完成 ==='
+REMOTE_SCRIPT
 }
 
 # ========== Step 6: 外部验证 ==========
@@ -312,6 +366,10 @@ verify() {
 
 cleanup() {
     rm -f "$PKG"
+    if [ -S "$SSH_CONTROL_PATH" ]; then
+        ssh "${SSH_OPTIONS[@]}" -O exit "$SERVER_USER@$SERVER_HOST" >/dev/null 2>&1 || true
+    fi
+    rm -f "$SSH_CONTROL_PATH"
 }
 
 main() {
@@ -325,7 +383,6 @@ main() {
     package
     upload
     remote_deploy
-    cleanup
     verify
 
     echo ""
@@ -344,4 +401,5 @@ main() {
     fi
 }
 
+trap cleanup EXIT
 main "$@"

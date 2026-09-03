@@ -41,6 +41,9 @@ const submittedAnswer: JudgeAnswerRow = {
 describe("judge answer export", () => {
   it("sanitizes archive path segments and formats arbitrary file sizes", () => {
     expect(safeExportName("../选手:七?", "fallback")).toBe(".._选手_七_");
+    const longChineseName = safeExportName(`01_${"超长中文题目".repeat(50)}`, "题目_11");
+    expect(longChineseName.startsWith("01_")).toBe(true);
+    expect(Buffer.byteLength(longChineseName, "utf8")).toBeLessThanOrEqual(200);
     expect(formatExportSize(70 * 1024 * 1024)).toBe("70.0 MB");
   });
 
@@ -134,7 +137,7 @@ describe("judge answer export", () => {
     const previous = process.env.MODELMUX_DATA_DIR;
     process.env.MODELMUX_DATA_DIR = dataDirectory;
     const snapshot: JudgeAnswerExportSnapshot = {
-      questions: [question, { ...question, id: 12, title: "第二题" }],
+      questions: [question, { ...question, id: 12, title: `第二题_${"超长中文标题".repeat(50)}` }],
       contestants: [contestant, { id: 8, username: "player08", displayName: "选手八" }],
       answers: [],
     };

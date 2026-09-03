@@ -7,6 +7,7 @@ import { competitionControlFromStored } from "./control";
 import { hashPassword } from "./auth";
 import { generateContestantApiKey } from "./api-access";
 import { insertCompetitionEvent } from "./events";
+import { deleteStoredMediaFiles } from "./media";
 import { withCompetitionTransaction } from "./transaction";
 import type {
   AnswerStatus,
@@ -113,6 +114,14 @@ interface JudgeExportContestantRow extends RowDataPacket {
   contestant_id: number;
   username: string;
   contestant_name: string;
+}
+
+interface UserDeletionRow extends RowDataPacket {
+  id: number;
+}
+
+interface UserAttachmentRow extends RowDataPacket {
+  storage_name: string;
 }
 
 type JudgeExportAnswerRecord = JudgeAnswerRecord;
@@ -231,6 +240,60 @@ export async function listUsers(): Promise<CompetitionUser[]> {
   return result.map(toUser);
 }
 
+async function hardDeleteContestantRecord(
+  selector: { id: number } | { deletedUsername: string },
+): Promise<boolean> {
+  await ensureCompetitionSchema();
+  const connection = await competitionPool().getConnection();
+  const storageNames = await withCompetitionTransaction(connection, async (transaction) => {
+    const [users] = "id" in selector
+      ? await transaction.execute<UserDeletionRow[]>(
+          `SELECT id FROM competition_users
+           WHERE id = ? AND role = 'contestant'
+           LIMIT 1 FOR UPDATE`,
+          [selector.id],
+        )
+      : await transaction.execute<UserDeletionRow[]>(
+          `SELECT id FROM competition_users
+           WHERE role = 'contestant' AND username = ? AND deleted_at IS NOT NULL
+           LIMIT 1 FOR UPDATE`,
+          [selector.deletedUsername],
+        );
+    const user = users[0];
+    if (!user) return null;
+
+    const userId = Number(user.id);
+    const [attachments] = await transaction.execute<UserAttachmentRow[]>(
+      `SELECT storage_name FROM competition_attachments
+       WHERE uploader_id = ? AND uploader_role = 'contestant'
+       FOR UPDATE`,
+      [userId],
+    );
+    await transaction.execute(
+      "DELETE FROM competition_answers WHERE contestant_id = ?",
+      [userId],
+    );
+    await transaction.execute(
+      "DELETE FROM competition_attachments WHERE uploader_id = ? AND uploader_role = 'contestant'",
+      [userId],
+    );
+    const [result] = await transaction.execute<ResultSetHeader>(
+      "DELETE FROM competition_users WHERE id = ? AND role = 'contestant'",
+      [userId],
+    );
+    if (result.affectedRows !== 1) throw new Error("competition_user_delete_failed");
+    return attachments.map((attachment) => attachment.storage_name);
+  });
+
+  if (!storageNames) return false;
+  await deleteStoredMediaFiles(storageNames);
+  return true;
+}
+
+async function purgeDeletedContestantUsername(username: string): Promise<void> {
+  await hardDeleteContestantRecord({ deletedUsername: username });
+}
+
 export async function createUser(input: {
   role: CompetitionRole;
   username: string;
@@ -238,6 +301,10 @@ export async function createUser(input: {
   password: string;
 }): Promise<number> {
   await ensureCompetitionSchema();
+  const username = input.username.trim().toLowerCase();
+  if (input.role === "contestant") {
+    await purgeDeletedContestantUsername(username);
+  }
   const passwordHash = await hashPassword(input.password);
   const apiKey = input.role === "contestant" ? generateContestantApiKey() : null;
   const [result] = await competitionPool().execute<ResultSetHeader>(
@@ -246,7 +313,7 @@ export async function createUser(input: {
      VALUES (?, ?, ?, ?, ?, ?)`,
     [
       input.role,
-      input.username.trim().toLowerCase(),
+      username,
       input.displayName.trim(),
       passwordHash,
       input.password,
@@ -418,20 +485,8 @@ export async function updateUser(input: {
   return result.affectedRows > 0;
 }
 
-export async function softDeleteUser(id: number): Promise<boolean> {
-  await ensureCompetitionSchema();
-  const [result] = await competitionPool().execute<ResultSetHeader>(
-    `UPDATE competition_users
-     SET deleted_at = CURRENT_TIMESTAMP(3), active = FALSE
-     WHERE id = ? AND role = 'contestant' AND deleted_at IS NULL`,
-    [id],
-  );
-  if (result.affectedRows === 0) return false;
-  await competitionPool().execute(
-    "UPDATE competition_sessions SET revoked_at = CURRENT_TIMESTAMP(3) WHERE user_id = ? AND revoked_at IS NULL",
-    [id],
-  );
-  return true;
+export async function deleteUser(id: number): Promise<boolean> {
+  return hardDeleteContestantRecord({ id });
 }
 
 const questionSelect = `SELECT q.id, q.title, q.content_html, q.status, q.version,

@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { requireAdmin } from "@/lib/admin/auth";
 import { competitionError, parseJson, requireSameOrigin } from "@/lib/competition/http";
-import { softDeleteUser, updateUser } from "@/lib/competition/repository";
+import { deleteUser, updateUser } from "@/lib/competition/repository";
 
 export const runtime = "nodejs";
 
@@ -44,10 +44,10 @@ export async function DELETE(
   const userId = Number(id);
   if (!Number.isSafeInteger(userId) || userId < 1) return NextResponse.json({ error: "账号不存在" }, { status: 404 });
   try {
-    const deleted = await softDeleteUser(userId);
+    const deleted = await deleteUser(userId);
     return deleted
       ? NextResponse.json({ ok: true })
-      : NextResponse.json({ error: "账号不存在或已删除" }, { status: 404 });
+      : NextResponse.json({ error: "账号不存在" }, { status: 404 });
   } catch (error) {
     return competitionError(error);
   }

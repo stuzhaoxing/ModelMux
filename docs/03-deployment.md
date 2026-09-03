@@ -16,7 +16,12 @@ cp .env.example .env.local
 
 ### 2.1 服务器一次性准备
 
-需要 Node.js 22+、MySQL 8、nginx 和 systemd，域名解析到这台服务器并准备好证书。
+需要 Node.js 22+、MySQL 8、nginx、systemd 和 Noto CJK 字体，域名解析到这台服务器并准备好证书。Ubuntu 先安装答卷 PDF 使用的中文字体：
+
+```bash
+apt-get update
+apt-get install -y fonts-noto-cjk
+```
 
 ```bash
 useradd -r -m -d /opt/modelmux -s /usr/sbin/nologin modelmux
@@ -76,7 +81,7 @@ nginx 侧只有两处不能省：`proxy_buffering off`（`/v1/*` 的流式响应
 
 ### 2.2 每次发版
 
-本地执行，需要 `sshpass`、pnpm 11、Node.js 22+，服务器密码放在 `.deploy.local`（被 `.gitignore` 忽略）或 `SERVER_PASS` 环境变量：
+本地执行，需要 `sshpass`、pnpm 11、Node.js 22+，服务器密码放在 `.deploy.local`（被 `.gitignore` 忽略）或 `MODELMUX_DEPLOY_PASSWORD` 环境变量：
 
 ```bash
 ./deploy.sh              # 本地构建 + 上传 + 重启
@@ -84,7 +89,7 @@ nginx 侧只有两处不能省：`proxy_buffering off`（`/v1/*` 的流式响应
 ./deploy.sh --logs       # 部署完顺带打印服务日志
 ```
 
-脚本的动作顺序是：本地 `pnpm build` → 组装 standalone（补 `.next/static` 和 `public/`）→ 打包时剔除 macOS 平台二进制 → `scp` 上传 → 服务器备份现版本、解包、修属主、`systemctl restart` → 本机回环健康检查最多等 40 秒 → 失败则自动回滚到备份并打印 `journalctl` → 成功后再从公网验一次 `/health`。
+脚本的动作顺序是：本地 `pnpm build` → 组装 standalone（补 `.next/static` 和 `public/`）→ 打包时剔除 macOS 产物并校验 Sharp 依赖及 Linux x64 Sharp/libvips → `scp` 上传 → 服务器备份现版本、解包、修属主，并在 Linux 上实际加载一次 Sharp → `systemctl restart` → 本机回环健康检查最多等 40 秒 → 失败则自动回滚到备份并打印 `journalctl` → 成功后再从公网验一次 `/health`。
 
 绝不在服务器上执行 `pnpm build`：服务器只有运行期依赖，构建会因为缺少 devDependencies 和内存不足失败。
 

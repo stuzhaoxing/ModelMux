@@ -194,7 +194,7 @@ export default function AdminAccounts() {
 
   async function deleteAccount(user: CompetitionUser) {
     const confirmed = window.confirm(
-      `确认删除账号“${user.displayName}”（${user.username}）？\n\n账号将立即停用并从列表隐藏，历史答题数据会保留。`,
+      `确认永久删除账号“${user.displayName}”（${user.username}）？\n\n该账号的答题记录和上传附件也会永久删除，此操作无法撤销。`,
     );
     if (!confirmed) return;
     setPending(true);
@@ -203,7 +203,7 @@ export default function AdminAccounts() {
     try {
       await apiRequest(`/api/admin/competition/users/${user.id}`, { method: "DELETE" });
       await loadUsers();
-      setNotice("账号已删除，历史数据已保留");
+      setNotice("账号及相关数据已永久删除");
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : "账号删除失败");
     } finally {

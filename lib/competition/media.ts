@@ -215,6 +215,12 @@ export async function discardMediaUpload(upload: PendingMediaUpload): Promise<vo
   await unlink(uploadPath(upload.storageName)).catch(() => undefined);
 }
 
+export async function deleteStoredMediaFiles(storageNames: readonly string[]): Promise<void> {
+  await Promise.all(
+    storageNames.map((storageName) => unlink(uploadPath(storageName)).catch(() => undefined)),
+  );
+}
+
 export async function registerMediaUpload(input: {
   upload: PendingMediaUpload;
   uploaderId: number | null;
