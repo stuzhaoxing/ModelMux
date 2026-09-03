@@ -3,6 +3,11 @@ import { randomUUID } from "node:crypto";
 import { loadGatewayConfig, providerKeys } from "./config";
 import { errorResponse, optionsResponse, withCors } from "./http";
 import {
+  InlineAssetRewriteError,
+  rewriteInlineBase64Assets,
+} from "./inline-assets";
+import { ossInlineAssetStoreFromEnv } from "./oss-inline-assets";
+import {
   nextProviderKey,
   recordRequest,
 } from "./runtime";
@@ -126,8 +131,14 @@ async function readJsonPayload(
 ): Promise<Record<string, unknown> | Response> {
   let payload: unknown;
   try {
-    payload = await request.json();
-  } catch {
+    const assetStore = ossInlineAssetStoreFromEnv();
+    payload = assetStore
+      ? await rewriteInlineBase64Assets(request, assetStore)
+      : await request.json();
+  } catch (error) {
+    if (error instanceof InlineAssetRewriteError) {
+      return errorResponse(error.status, error.code, error.message);
+    }
     return errorResponse(400, "invalid_json", "请求体必须是有效的 JSON 对象。");
   }
 

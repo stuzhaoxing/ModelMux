@@ -38,6 +38,7 @@ const DOCX_IMAGE_MAX_HEIGHT = 620;
 const PDF_IMAGE_MAX_HEIGHT = 520;
 const EXPORT_IMAGE_PROCESS_MAX_WIDTH = 1600;
 const EXPORT_IMAGE_PROCESS_MAX_HEIGHT = 1800;
+const EXPORT_PATH_SEGMENT_MAX_BYTES = 200;
 
 export interface JudgeExportArchive {
   filePath: string;
@@ -78,14 +79,23 @@ function dataDirectory(): string {
   return configured ? path.resolve(configured) : path.join(process.cwd(), ".modelmux-data");
 }
 
-export function safeExportName(value: string, fallback: string, maxLength = 100): string {
-  const normalized = Array.from(value.trim() || fallback)
+export function safeExportName(value: string, fallback: string, maxBytes = EXPORT_PATH_SEGMENT_MAX_BYTES): string {
+  const sanitize = (candidate: string) => Array.from(candidate.trim())
     .map((character) => /[\\/:*?"<>|\u0000-\u001f]/.test(character) ? "_" : character)
     .join("")
     .replace(/\s+/g, " ")
     .replace(/[. ]+$/g, "")
     .trim();
-  return Array.from(normalized || fallback).slice(0, maxLength).join("") || fallback;
+  const normalized = sanitize(value) || sanitize(fallback) || "export";
+  let result = "";
+  let byteLength = 0;
+  for (const character of Array.from(normalized)) {
+    const characterBytes = Buffer.byteLength(character, "utf8");
+    if (byteLength + characterBytes > maxBytes) break;
+    result += character;
+    byteLength += characterBytes;
+  }
+  return result.replace(/[. ]+$/g, "").trim() || "export";
 }
 
 export function formatExportSize(bytes: number): string {

@@ -1,10 +1,15 @@
-import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { discardMediaUpload, mediaContentDisposition, receiveMediaUpload } from "./media";
+import {
+  deleteStoredMediaFiles,
+  discardMediaUpload,
+  mediaContentDisposition,
+  receiveMediaUpload,
+} from "./media";
 
 function uploadRequest(
   bytes: Uint8Array,
@@ -97,5 +102,17 @@ describe("disk-backed media uploads", () => {
     expect(upload.byteSize).toBe(0);
     expect(mediaContentDisposition(upload.kind, upload.originalName)).toMatch(/^attachment;/);
     await discardMediaUpload(upload);
+  });
+
+  it("removes persisted upload files during account deletion", async () => {
+    const first = path.join(dataDirectory, "uploads", "first.upload");
+    const second = path.join(dataDirectory, "uploads", "second.png");
+    await mkdir(path.dirname(first), { recursive: true });
+    await writeFile(first, "first");
+    await writeFile(second, "second");
+
+    await deleteStoredMediaFiles(["first.upload", "second.png", "already-missing.upload"]);
+
+    expect(await readdir(path.join(dataDirectory, "uploads"))).toEqual([]);
   });
 });

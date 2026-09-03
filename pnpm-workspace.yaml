@@ -1,3 +1,13 @@
 allowBuilds:
   esbuild: true
   unrs-resolver: true
+
+supportedArchitectures:
+  os:
+    - darwin
+    - linux
+  cpu:
+    - arm64
+    - x64
+  libc:
+    - glibc

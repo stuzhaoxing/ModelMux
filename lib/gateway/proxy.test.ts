@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -9,6 +9,7 @@ import {
   recordCompetitionTokenUsage,
 } from "../competition/repository";
 import { proxyChatCompletions } from "./proxy";
+import { ossInlineAssetStoreFromEnv } from "./oss-inline-assets";
 import { setGatewayServiceEnabled } from "./service-state";
 
 vi.mock("../competition/repository", async (importOriginal) => {
@@ -20,6 +21,10 @@ vi.mock("../competition/repository", async (importOriginal) => {
   };
 });
 
+vi.mock("./oss-inline-assets", () => ({
+  ossInlineAssetStoreFromEnv: vi.fn(),
+}));
+
 const ENV_KEYS = [
   "MODELMUX_ALLOW_ANONYMOUS",
   "MODELMUX_CLIENT_KEYS",
@@ -28,6 +33,12 @@ const ENV_KEYS = [
   "MODELMUX_MAX_BODY_BYTES",
   "MODELMUX_RATE_LIMIT_RPM",
   "MODELMUX_ROUTES_JSON",
+  "MODELMUX_OSS_ACCESS_KEY_ID",
+  "MODELMUX_OSS_ACCESS_KEY_SECRET",
+  "MODELMUX_OSS_REGION",
+  "MODELMUX_OSS_BUCKET",
+  "MODELMUX_OSS_PUBLIC_BASE_URL",
+  "MODELMUX_OSS_INPUT_PREFIX",
   "DEEPSEEK_API_KEYS",
   "DASHSCOPE_API_KEYS",
   "SILICONFLOW_API_KEYS",
@@ -63,6 +74,7 @@ describe.sequential("chat completion proxy", () => {
     process.env.DEEPSEEK_API_KEYS = "deepseek-secret";
     process.env.DASHSCOPE_API_KEYS = "dashscope-secret";
     process.env.SILICONFLOW_API_KEYS = "provider-secret";
+    vi.mocked(ossInlineAssetStoreFromEnv).mockReturnValue(null);
     vi.mocked(authenticateContestantApiKey).mockResolvedValue(null);
     vi.mocked(recordCompetitionTokenUsage).mockResolvedValue(undefined);
   });
@@ -204,6 +216,51 @@ describe.sequential("chat completion proxy", () => {
     );
 
     const response = await proxyChatCompletions(largeRequest);
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("replaces an inline Base64 asset before forwarding the request", async () => {
+    const original = Buffer.alloc(1024 * 1024, 0x41);
+    const publicUrl = "https://modelmux.oss-cn-beijing.aliyuncs.com/ai-inputs/test.jpg";
+    vi.mocked(ossInlineAssetStoreFromEnv).mockReturnValue({
+      upload: async (asset) => {
+        expect((await readFile(asset.filePath)).equals(original)).toBe(true);
+        return publicUrl;
+      },
+    });
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const payload = JSON.parse(String(init.body)) as {
+        messages: Array<{ content: Array<{ image_url: { url: string } }> }>;
+      };
+      expect(payload.messages[0].content[0].image_url.url).toBe(publicUrl);
+      expect(String(init.body)).not.toContain(original.toString("base64"));
+      return Response.json({ id: "offloaded-request" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const offloadedRequest = new Request(
+      "http://localhost:4000/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer client-secret",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "qwen3.7-max",
+          messages: [{
+            role: "user",
+            content: [{
+              type: "image_url",
+              image_url: { url: `data:image/jpeg;base64,${original.toString("base64")}` },
+            }],
+          }],
+        }),
+      },
+    );
+
+    const response = await proxyChatCompletions(offloadedRequest);
 
     expect(response.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledOnce();
