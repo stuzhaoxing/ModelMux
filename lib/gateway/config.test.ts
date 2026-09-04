@@ -35,9 +35,14 @@ describe("gateway config", () => {
       1_000_000,
       1_000_000,
     ]);
-    expect(config.models.every(
-      (model) => model.alias === model.routes[0].upstreamModel,
-    )).toBe(true);
+    const qwenMax = config.models.find(
+      (model) => model.alias === "qwen3.7-max",
+    );
+    expect(qwenMax?.inputModalities).toEqual(["text", "image", "video"]);
+    expect(qwenMax?.routes[0]).toMatchObject({
+      provider: "aliyun",
+      upstreamModel: "qwen3.7-max-2026-06-08",
+    });
   });
 
   it("uses an overridden primary platform model ID as the public ID", () => {
@@ -54,6 +59,30 @@ describe("gateway config", () => {
       tier: "plus",
     });
     expect(model?.routes[0].upstreamModel).toBe("qwen-plus-latest");
+  });
+
+  it("keeps the public Qwen Max ID stable while allowing a newer DashScope snapshot", () => {
+    const config = loadGatewayConfig(env({
+      DASHSCOPE_MODEL_QWEN_MAX: "qwen3.7-max-newer-snapshot",
+    }));
+    const model = config.models.find(
+      (candidate) => candidate.alias === "qwen3.7-max",
+    );
+
+    expect(model).toMatchObject({
+      alias: "qwen3.7-max",
+      displayName: "Qwen 3.7 Max",
+      routes: [
+        {
+          provider: "aliyun",
+          upstreamModel: "qwen3.7-max-newer-snapshot",
+        },
+        {
+          provider: "siliconflow",
+          upstreamModel: "Qwen/Qwen3.5-397B-A17B",
+        },
+      ],
+    });
   });
 
   it("adds the verified DashScope domestic flagship catalog when configured", () => {

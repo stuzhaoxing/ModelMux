@@ -66,6 +66,10 @@ qwen3.7-plus
 ├── 优先级 100：阿里云百炼 / qwen3.7-plus
 └── 优先级 70：硅基流动 / 已验证的 Qwen 备用模型
 
+qwen3.7-max（选手稳定 ID）
+├── 优先级 100：阿里云百炼 / qwen3.7-max-2026-06-08（文本、图像、视频）
+└── 优先级 70：硅基流动 / 已验证的 Qwen 备用模型
+
 kimi/kimi-k3
 └── 优先级 100：阿里云百炼 Moonshot 原厂直供 / kimi/kimi-k3
 
@@ -80,10 +84,13 @@ doubao-seed-2-0-pro-260215（仅配置 ARK_API_KEYS 后开放）
 3. 每次候选请求使用该路由自己的真实上游模型 ID。
 4. 一旦选定上游响应并开始向客户端返回，禁止切换供应商，避免拼接两条 SSE 流。
 5. `4xx` 业务错误不会自动故障切换，防止重复提交无效请求。
+
 6. 模型 ID 采用平台原名，不代表思考开关或推理强度；网关不根据模型名称覆盖参数。
 7. Playground 没有专用后端，浏览器直接拿选手自己的 API Key 调 `/v1/chat/completions`，因此和外部客户端走完全相同的鉴权、白名单与供应商路由；网关不记录个人调用量，也不设置本地额度或频率限制，只汇总本场比赛的分钟级 Token 总量供大屏展示。
 8. DeepSeek V4 官方使用 `thinking.type=enabled|disabled` 与可选的 `reasoning_effort=high|max`；Qwen Chat Completions 使用 `enable_thinking` 与可选的正整数 `thinking_budget`。
 9. 切换备用路由时，只把 `model` 替换为该路由的上游模型 ID；流式请求额外合并 `stream_options.include_usage=true` 以读取上游用量，其余请求参数不校验、不删除，由上游决定是否接受。
+
+`qwen3.7-max` 是公开给选手的稳定 ID，是默认目录中唯一一个允许主路由上游 ID 不同的特例。默认上游由 `DASHSCOPE_MODEL_QWEN_MAX=qwen3.7-max-2026-06-08` 指定，避免百炼的浮动别名回落到仅文本的 `2026-05-20` 能力。
 
 ## 4. 安全默认值
 
