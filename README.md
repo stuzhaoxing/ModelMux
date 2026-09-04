@@ -91,7 +91,7 @@ curl http://localhost:1444/v1/chat/completions \
 | `deepseek-v4-pro` | DeepSeek 官方 | 1M | 硅基流动备用 |
 | `qwen3.7-flash` | 阿里云百炼 | 1M | 硅基流动备用 |
 | `qwen3.7-plus` | 阿里云百炼 | 1M | 硅基流动备用 |
-| `qwen3.7-max` | 阿里云百炼 | 1M | 硅基流动备用 |
+| `qwen3.7-max` | 阿里云百炼 | 1M | 主路由映射到 `qwen3.7-max-2026-06-08` 多模态快照；硅基流动备用 |
 | `qwen3.8-max` | 阿里云百炼 | 1M | 最新千问旗舰 |
 | `ZHIPU/GLM-5.3` | 阿里云百炼 · 智谱原厂直供 | 1M | 最新 GLM 旗舰 |
 | `kimi/kimi-k3` | 阿里云百炼 · Moonshot 原厂直供 | 1M | 最新 Kimi 旗舰 |
@@ -101,6 +101,8 @@ curl http://localhost:1444/v1/chat/completions \
 网关不支持 `deepseek`、`qwen`、`deepseek-pro`、`qwen-pro` 等简称或旧产品名，大小写也必须与表中 ID 一致；不精确的名称统一返回 `400 model_not_allowed`。DeepSeek V4 的思考参数是 `thinking.type=enabled|disabled` 与可选的 `reasoning_effort=high|max`；Qwen Chat Completions 使用 `enable_thinking` 与可选的正整数 `thinking_budget`。网关只校验并转发官方参数，不根据模型名称擅自覆盖。
 
 当前 Qwen、Kimi K3、MiniMax M3 和豆包旗舰路由支持文本、图像和视频理解，并返回文本内容；GLM-5.3 与 DeepSeek V4 仅开放文本输入。多模态理解不等同于文生图；浏览器 Playground 当前只开放单张 PNG/JPG/WebP 图片。外部客户端可按 OpenAI Chat Completions 的 `image_url` / `video_url` 调用。
+
+选手仍使用稳定 ID `qwen3.7-max`；网关向阿里云百炼发起请求时会将其改写为支持多模态输入的 `qwen3.7-max-2026-06-08`。可通过 `DASHSCOPE_MODEL_QWEN_MAX` 在不改变选手配置的情况下更新后续快照。
 
 GLM、Kimi、MiniMax 与 Qwen 旗舰只有在 `DASHSCOPE_API_KEYS` 已配置时才进入选手白名单；豆包只有在 `ARK_API_KEYS` 已配置时才进入白名单。这样 `/v1/models` 和选手 API 文档不会发布实际无法调用的模型。
 

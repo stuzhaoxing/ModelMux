@@ -316,6 +316,10 @@ function defaultModels(env: NodeJS.ProcessEnv): ModelRouteGroup[] {
   const qwenFlashModel = envValue(env.MODEL_QWEN_FLASH, "qwen3.7-flash");
   const qwenPlusModel = envValue(env.MODEL_QWEN_PLUS, "qwen3.7-plus");
   const qwenMaxModel = envValue(env.MODEL_QWEN_MAX, "qwen3.7-max");
+  const qwenMaxUpstreamModel = envValue(
+    env.DASHSCOPE_MODEL_QWEN_MAX,
+    "qwen3.7-max-2026-06-08",
+  );
   const qwenFlagshipModel = envValue(
     env.MODEL_QWEN_3_8_MAX,
     "qwen3.8-max",
@@ -398,7 +402,7 @@ function defaultModels(env: NodeJS.ProcessEnv): ModelRouteGroup[] {
     modelGroup(
       qwenMaxModel,
       qwenRoutes(
-        qwenMaxModel,
+        qwenMaxUpstreamModel,
         envValue(
           env.SILICONFLOW_MODEL_QWEN_MAX,
           "Qwen/Qwen3.5-397B-A17B",

@@ -41,6 +41,7 @@ const ENV_KEYS = [
   "MODELMUX_OSS_INPUT_PREFIX",
   "DEEPSEEK_API_KEYS",
   "DASHSCOPE_API_KEYS",
+  "DASHSCOPE_MODEL_QWEN_MAX",
   "SILICONFLOW_API_KEYS",
   "ARK_API_KEYS",
 ];
@@ -320,6 +321,24 @@ describe.sequential("chat completion proxy", () => {
     );
 
     expect(response.status).toBe(200);
+  });
+
+  it("maps the public Qwen 3.7 Max ID to the latest multimodal DashScope snapshot", async () => {
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      expect(url).toBe(
+        "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+      );
+      expect(body.model).toBe("qwen3.7-max-2026-06-08");
+      return Response.json({ id: "qwen-max-multimodal-1" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await proxyChatCompletions(request("qwen3.7-max"));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-ModelMux-Provider")).toBe("aliyun");
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it("routes exact Kimi K3 and GLM-5.3 IDs through DashScope", async () => {
