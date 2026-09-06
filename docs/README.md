@@ -7,6 +7,7 @@
 1. [局域网组网方案](./01-network-topology.md)
 2. [Web 服务与 Gateway 架构](./02-application-architecture.md)
 3. [公网与 Mac mini 部署手册](./03-deployment.md)
+4. [换开发机与新环境本地起步](./04-new-machine-setup.md)
 
 ## 后续建议文档
 

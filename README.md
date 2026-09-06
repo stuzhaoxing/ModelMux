@@ -29,13 +29,24 @@
 
 ## 本地开发
 
-依赖 Node.js 22+ 和 pnpm 10+：
+依赖 Node.js（版本由 `.node-version` 锁定，最低 22）、pnpm 11 和一个本地 MySQL 8+。
+缺数据库时 `/health` 返回 `503 degraded`，考核端所有页面都打不开。
 
 ```bash
+corepack enable && corepack prepare pnpm@11.9.0 --activate
+brew install mysql && brew services start mysql
+
 pnpm install
-cp .env.example .env.local
+
+# 建库建用户；表在应用首次访问考核功能时自动创建
+MODELMUX_DB_PASSWORD='<至少16位>' ./scripts/setup-competition-db.sh
+
+cp .env.example .env.local   # 至少填管理密码、session secret、数据库 URL 和一个供应商 Key
 pnpm dev
 ```
+
+发版还需要 `sshpass`（`brew install sshpass`），`deploy.sh` 的预检会检查它。
+换开发机的完整清单见 [docs/04-new-machine-setup.md](./docs/04-new-machine-setup.md)。
 
 选手入口为 `http://localhost:1444/contestant/questions`，API 文档为 `http://localhost:1444/contestant/api-docs`（Playground 是这个页面里的弹窗），比赛投屏为 `http://localhost:1444/screen`，管理员控制台为 `http://localhost:1444/admin`。模型 API 不支持匿名调用；没有有效选手账号或运维 Key 时，网关不会成为开放代理。
 
@@ -130,7 +141,7 @@ GLM、Kimi、MiniMax 与 Qwen 旗舰只有在 `DASHSCOPE_API_KEYS` 已配置时�
 
 评委端和选手端顶部显示模式横幅，登录页也会显示，模式变化通过既有的 SSE 通道实时推送，不需要刷新页面。`GET /api/competition/mode` 只返回模式本身，不需要登录。
 
-部署步骤见 [docs/03-deployment.md](./docs/03-deployment.md)，架构边界见 [docs/02-application-architecture.md](./docs/02-application-architecture.md)。
+部署步骤见 [docs/03-deployment.md](./docs/03-deployment.md)，架构边界见 [docs/02-application-architecture.md](./docs/02-application-architecture.md)，换开发机见 [docs/04-new-machine-setup.md](./docs/04-new-machine-setup.md)。
 
 ## 目录
 
@@ -142,5 +153,5 @@ lib/competition/     考核数据、双角色鉴权、富文本清洗与实时�
 deploy/              公网 systemd/nginx 与 Mac mini launchd 配置示例
 deploy.sh            公网实例的本地构建推送脚本
 scripts/             常驻启动与数据库初始化脚本
-docs/                组网、架构与部署文档
+docs/                组网、架构、部署与换机清单
 ```
