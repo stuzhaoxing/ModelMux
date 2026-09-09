@@ -77,7 +77,7 @@ export interface GatewayIngressEndpoint {
 }
 
 export interface GatewayStatus {
-  state: "running" | "needs_config" | "suspended";
+  state: "running" | "needs_config";
   deploymentMode: DeploymentMode;
   apiBase: string;
   internalEndpoint: GatewayIngressEndpoint;

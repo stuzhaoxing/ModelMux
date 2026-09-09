@@ -52,7 +52,6 @@ MODELMUX_CLIENT_KEYS=<client-key-1>,<client-key-2>
 MODELMUX_TRUST_PROXY=true
 DEEPSEEK_API_KEYS=<provider-key-1>
 DASHSCOPE_API_KEYS=<provider-key-1>
-SILICONFLOW_API_KEYS=<provider-key-1>,<provider-key-2>
 # 可选；配置后开放 doubao-seed-2-0-pro-260215
 ARK_API_KEYS=<provider-key-1>
 # 应用只监听回环，公网入口由 nginx 提供
@@ -101,11 +100,11 @@ curl https://debug.example.com/v1/models \
   -H 'Authorization: Bearer <client-key>'
 ```
 
-`/health` 的 `status` 有四种：`ok`、`needs_config`（进程起来了但必填配置没写全）、`suspended`（模型 API 被管理员停掉）、`degraded`（考核数据库连不上，同时返回 HTTP 503）。`deploy.sh` 对这四种分别给出提示，`degraded` 会直接判部署失败。
+`/health` 的 `status` 有三种：`ok`、`needs_config`（进程起来了但必填配置没写全）、`degraded`（考核数据库连不上，同时返回 HTTP 503）。`deploy.sh` 分别给出提示，`degraded` 会直接判部署失败。
 
-### 2.3 停服与撤下
+### 2.3 模型 API 可用性
 
-正式开赛前，登录 `https://debug.example.com/admin/settings`，关闭“接受模型请求”开关。确认以下结果：
+模型 API 常开，正式开赛不会关闭公网或内网入口。可检查：
 
 ```bash
 curl -i https://debug.example.com/v1/models \
@@ -113,9 +112,9 @@ curl -i https://debug.example.com/v1/models \
 curl https://debug.example.com/health
 ```
 
-第一个请求必须返回 `503 service_suspended`；健康检查保持 HTTP 200，并返回 `status: "suspended"`、`apiReady: false`。停服状态保存在 `MODELMUX_DATA_DIR/gateway-service-state.json`（即 `/opt/modelmux/data/gateway-service-state.json`），重启服务不会自动恢复模型 API。管理员后台保持在线，可在比赛结束后从同一页面恢复。
+配置完整且凭证正确时，模型列表请求返回 HTTP 200；健康检查返回 `status: "ok"`、`apiReady: true`。旧停服文件不再生效，重启后模型 API 仍保持开启。
 
-如需连管理后台和健康检查一并撤下：
+如需维护期间停止整个进程：
 
 ```bash
 systemctl stop modelmux
@@ -166,7 +165,6 @@ MODELMUX_EXPORT_FONT_FAMILY=
 MODELMUX_COMPETITION_DURATION_MINUTES=90
 MODELMUX_CLIENT_KEYS=<competition-client-key>
 DASHSCOPE_API_KEYS=<provider-key-1>
-SILICONFLOW_API_KEYS=<provider-key-1>,<provider-key-2>
 # 可选；配置后开放 doubao-seed-2-0-pro-260215
 ARK_API_KEYS=<provider-key-1>
 HOSTNAME=10.20.0.1
@@ -212,7 +210,7 @@ curl http://10.20.0.1:4000/v1/models \
   -H 'Authorization: Bearer <competition-client-key>'
 ```
 
-投屏电脑打开 `http://10.20.0.1:4000/screen` 后，输入与 `MODELMUX_ADMIN_PASSWORD` 相同的单密码。系统签发独立的大屏只读会话，不会授予管理员后台权限；大屏快照接口也验证该会话，不能绕过页面直接读取。页面显示姓名和答题状态，不包含登录账号、答案正文、密码或 API Key。选手区域会自动调整行列，确保全部选手始终同屏展示。
+投屏电脑打开 `http://10.20.0.1:4000/screen` 即可查看大屏，无需输入密码。大屏及其只读快照接口 `/api/competition/screen` 均可直接访问，只展示真实比赛数据，不提供 mock 模式。页面显示姓名和答题状态，不包含登录账号、答案正文、密码或 API Key。选手区域会自动调整行列，确保全部选手始终同屏展示。
 
 ## 4. 流式响应代理
 
@@ -239,7 +237,7 @@ gzip off;
 
 - 管理控制台只需要独立管理密码。
 - `/` 跳转到选手答题页 `/contestant/questions`，API 文档位于 `/contestant/api-docs`（Playground 是这个页面里的弹窗，旧地址 `/contestant/playground` 会跳转过来）。管理员登录入口是 `/admin/login`；登录后从 `/admin/competition` 进入考务总览，`/admin/questions` 管理题目，`/admin/answers` 查看答卷。旧 `/judge/*` 链接会永久重定向到对应 admin 页面。
-- 管理员总览显示内网和外网入站端口；没有公网入站服务时外网端口显示“未开放”。
+- 管理后台左侧将考务总览、题目管理和现场日志作为三个独立的一级入口。
 - 未登录请求 `/api/admin/status` 和 `/api/admin/competition/users` 均返回 `401`。
 - 管理员只创建选手账号。考务能力直接使用 `modelmux_admin_session`，不再创建或登录评委账号；已有评委账号与历史记录保留，但旧评委会话会自动撤销。选手继续使用独立的 `modelmux_competition_session`，因此同一浏览器可同时保持 admin 与选手登录。
 - 管理员在考务总览填写时长并开始比赛后，已登录选手无需刷新即可同时收到整套题目，大屏倒计时同步开始；停止或自然到时后，选手端隐藏题目并禁止继续保存、提交，历史答案保留。
@@ -247,8 +245,8 @@ gzip off;
 - 选手草稿、最终提交和相应时间可在 admin 考务工作台查看；最终提交后不能修改。
 - 管理员可在题目中、选手可在答卷中上传任意类型附件；文件实际写入 `MODELMUX_DATA_DIR/uploads`，重启服务后仍可下载。
 - 管理员在答题进度页点击“导出全部答卷”可下载按选手分目录的 ZIP；每道题同时包含 Word/PDF，未开始作答的选手也会生成“尚未开始作答”文件。
-- 系统设置关闭模型 API 后，OpenAI 兼容模型端点返回 `503 service_suspended`，管理员后台仍可访问。
-- 停服后重启服务，模型 API 仍保持停止；从系统设置重新开启后恢复调用。
+- 网关总览和系统设置页及其导航入口均已移除，旧地址 `/admin`、`/admin/settings` 跳转到考务总览；模型 API 常开，旧停服文件不影响调用。
+- 正式比赛开始前显示测试模式，开始后自动显示比赛模式；比赛结束或服务重启后保留对应模式与比赛状态。
 - 停掉 MySQL 后 `/health` 返回 `503`，`status` 为 `degraded`，`database.reachable` 为 `false`；恢复 MySQL 后重新返回 `200`。
 - 选手在答题框输入后不保存直接刷新页面，页面顶部出现"本机存有一份未保存的答案"横幅，点"恢复"回到刷新前的内容，点"丢弃"或直接继续输入都按丢弃处理。
 - 重启服务后，选手端和 admin 考务工作台的在线状态在十几秒内自行恢复，不需要手动刷新页面。

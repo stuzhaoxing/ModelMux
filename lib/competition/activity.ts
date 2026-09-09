@@ -1,6 +1,7 @@
 import type { RowDataPacket } from "mysql2";
 
 import { competitionPool, ensureCompetitionSchema, rows } from "./db";
+import { withCompetitionTransaction } from "./transaction";
 import type { ActivityEntry } from "./types";
 
 interface ActivityRow extends RowDataPacket {
@@ -20,6 +21,7 @@ interface ActivityRow extends RowDataPacket {
 
 export type ActivityInput = Omit<ActivityEntry, "id" | "at"> & {
   outcome?: ActivityEntry["outcome"];
+  generation?: number;
 };
 
 const activitySelect = `SELECT id, category, action, actor_role, actor_id,
@@ -54,7 +56,7 @@ function toEntry(row: ActivityRow): ActivityEntry {
 export async function recordActivity(input: ActivityInput): Promise<void> {
   try {
     await ensureCompetitionSchema();
-    await competitionPool().execute(
+    const write = (executor: Pick<ReturnType<typeof competitionPool>, "execute">) => executor.execute(
       `INSERT INTO competition_activity
          (category, action, actor_role, actor_id, actor_username, actor_name,
           question_id, question_title, detail, outcome)
@@ -72,6 +74,14 @@ export async function recordActivity(input: ActivityInput): Promise<void> {
         input.outcome ?? "ok",
       ],
     );
+    if (input.generation === undefined) {
+      await write(competitionPool());
+    } else {
+      await withCompetitionTransaction(await competitionPool().getConnection(), async (transaction) => {
+        const [control] = await transaction.execute<RowDataPacket[]>("SELECT generation FROM competition_control WHERE id = 1 FOR UPDATE");
+        if (Number(control[0]?.generation) === input.generation) await write(transaction);
+      });
+    }
   } catch (error) {
     console.error("[competition] 现场日志写入失败", error);
   }

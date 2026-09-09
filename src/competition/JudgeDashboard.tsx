@@ -12,15 +12,16 @@ import {
   TimerReset,
   UsersRound,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import {
   buildJudgeDashboardSummary,
-  formatJudgeCountdown,
 } from "@/lib/competition/judge-dashboard";
-import { competitionRemainingSeconds } from "@/lib/competition/control";
-import type { CompetitionControl, JudgeQuestion } from "@/lib/competition/types";
+import { competitionIsTesting } from "@/lib/competition/control";
+import type { CompetitionControl, JudgeQuestion, QuestionPhase } from "@/lib/competition/types";
 import { formatCompetitionTime } from "./api";
+import { JudgeCompetitionCountdown } from "./JudgeCompetitionCountdown";
+import { CompetitionResetPanel } from "./CompetitionResetPanel";
 import { ScreenNoticeEditor } from "./ScreenNoticeEditor";
 
 export function JudgeDashboard({
@@ -36,6 +37,11 @@ export function JudgeDashboard({
   onStartCompetition,
   onStopCompetition,
   onCompetitionExpired,
+  onAnswersChanged,
+  onArchivePendingChange,
+  phase = "competition",
+  testQuestionCount = 0,
+  competitionQuestionCount = questions.length,
 }: {
   questions: JudgeQuestion[];
   loading: boolean;
@@ -49,39 +55,28 @@ export function JudgeDashboard({
   onStartCompetition: () => void;
   onStopCompetition: () => void;
   onCompetitionExpired: () => void;
+  onAnswersChanged?: () => Promise<void>;
+  onArchivePendingChange?: (pending: boolean) => void;
+  phase?: QuestionPhase;
+  testQuestionCount?: number;
+  competitionQuestionCount?: number;
 }) {
   const summary = buildJudgeDashboardSummary(questions);
   const answerableQuestions = questions.filter((question) => question.status !== "draft");
-  const running = competition.state === "running";
-  const ended = competition.state === "ended";
-  const canStart = summary.questions.total > 0 && !running;
+  const testing = competitionIsTesting(competition);
+  const running = !testing && competition.state === "running";
+  const ended = !testing && competition.state === "ended";
+  const canStart = competitionQuestionCount > 0 && testing;
+  const phaseLabel = phase === "test" ? "测试题目" : "正式赛题";
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  const [now, setNow] = useState(() => Date.now());
-  const remainingSeconds = competitionRemainingSeconds(competition, now);
-  const countdownActive = running && remainingSeconds > 0;
-
-  useEffect(() => {
-    if (!running || !competition.endsAt) return;
-    if (!countdownActive) {
-      onCompetitionExpired();
-      return;
-    }
-    const endsAt = Date.parse(competition.endsAt);
-    const timer = window.setInterval(() => {
-      const current = Date.now();
-      setNow(current);
-      if (current >= endsAt) onCompetitionExpired();
-    }, 1_000);
-    return () => window.clearInterval(timer);
-  }, [competition.endsAt, countdownActive, onCompetitionExpired, running]);
 
   async function exportAnswers() {
     if (exporting) return;
     setExporting(true);
     setExportError(null);
     try {
-      const response = await fetch("/api/competition/judge/answers/export", { cache: "no-store" });
+      const response = await fetch(`/api/competition/judge/answers/export?phase=${phase}`, { cache: "no-store" });
       if (response.status === 401) {
         window.dispatchEvent(new Event("modelmux-admin-unauthorized"));
         return;
@@ -117,31 +112,29 @@ export function JudgeDashboard({
       <section className={`dashboard-publish-panel ${running ? "started" : "ready"}`}>
         <span className="dashboard-publish-icon">{running ? <TimerReset /> : ended ? <CircleStop /> : <CheckCircle2 />}</span>
         <div className="dashboard-publish-copy">
-          <h2>{running ? "比赛进行中" : ended ? "比赛已结束" : "比赛未开始"}</h2>
+          <h2>{testing ? "测试" : running ? "比赛中" : "比赛已结束"}</h2>
           <p>{running
-            ? `${summary.questions.total} 道题目 · 开始时间 ${formatCompetitionTime(competition.startedAt)}`
+            ? `${competitionQuestionCount} 道正式赛题 · 开始时间 ${formatCompetitionTime(competition.startedAt)}`
             : ended
               ? `${summary.questions.total} 道题目 · 结束时间 ${formatCompetitionTime(competition.stoppedAt ?? competition.endsAt)}`
-              : `${summary.questions.total} 道题目等待开始`}</p>
+              : `${testQuestionCount} 道测试题 · 测试不限时，开始正式比赛后自动切换`}</p>
         </div>
         {running ? (
           <div className="dashboard-publish-controls">
-            <div className="dashboard-publish-countdown" data-finished={remainingSeconds === 0} aria-live="polite">
-              <span>比赛剩余时间</span>
-              <strong>{formatJudgeCountdown(remainingSeconds)}</strong>
-            </div>
+            <JudgeCompetitionCountdown competition={competition} onExpired={onCompetitionExpired} />
             <button
               type="button"
               className="secondary-action danger"
               disabled={competitionPending}
-              title="停止比赛并立即对选手隐藏题目"
+              title="立即结束比赛，停止选手作答并保留已保存的答案"
               onClick={onStopCompetition}
             >
               {competitionPending ? <LoaderCircle className="spinning" /> : <CircleStop />}
-              {competitionPending ? "正在停止" : "停止比赛"}
+              {competitionPending ? "正在结束" : "立即结束比赛"}
             </button>
           </div>
-        ) : (
+        ) : null}
+        {testing && (
           <div className="dashboard-start-controls">
             <label>
               <span>比赛时长</span>
@@ -150,13 +143,19 @@ export function JudgeDashboard({
             <button
               type="button"
               className="primary-action"
-              disabled={!canStart || competitionPending}
+              disabled={!canStart || competitionPending || loading}
               aria-busy={competitionPending}
               onClick={onStartCompetition}
             >
               {competitionPending ? <LoaderCircle className="spinning" /> : <Send />}
-              {competitionPending ? "正在开始" : ended ? "重新开始比赛" : summary.questions.total === 0 ? "暂无题目" : "开始比赛"}
+              {competitionPending ? "正在开始" : competitionQuestionCount === 0 ? "暂无正式赛题" : "开始比赛"}
             </button>
+          </div>
+        )}
+        {ended && (
+          <div className="dashboard-start-controls">
+            <span>归档并重置后回到测试，可开始下一场比赛</span>
+            <a className="primary-action" href="#competition-reset-panel"><Archive />前往归档并重置</a>
           </div>
         )}
       </section>
@@ -165,7 +164,7 @@ export function JudgeDashboard({
 
       <section className="dashboard-panel dashboard-answer-overview">
         <div className="dashboard-panel-heading">
-          <div><span>ANSWER OVERVIEW</span><h2>全部题目答题概览</h2></div>
+          <div><span>ANSWER OVERVIEW</span><h2>{phaseLabel}答题概览</h2></div>
           <div className="dashboard-panel-heading-actions">
             <small>{summary.answers.questionCount} 道题目已有答题记录</small>
             <button type="button" className="primary-action" title="进入题目管理" onClick={onManageQuestions}>
@@ -183,7 +182,7 @@ export function JudgeDashboard({
             <small>{summary.answers.submitted} / {summary.answers.total} 份已提交</small>
           </div>
           <div className="dashboard-answer-counts">
-            <AnswerCount label="答卷总数" value={summary.answers.total} icon={<UsersRound />} />
+            <AnswerCount label="应交答卷" value={summary.answers.total} icon={<UsersRound />} />
             <AnswerCount label="已提交" value={summary.answers.submitted} icon={<CheckCircle2 />} tone="submitted" />
             <AnswerCount label="草稿中" value={summary.answers.drafting} icon={<FileEdit />} tone="drafting" />
             <AnswerCount label="未开始" value={summary.answers.notStarted} icon={<Circle />} />
@@ -218,8 +217,8 @@ export function JudgeDashboard({
                 return (
                   <tr key={question.id}>
                     <td data-label="题目"><strong>{question.title}</strong></td>
-                    <td data-label="比赛状态"><span className={`dashboard-status ${competition.state}`}><i />{competitionStatusLabel(competition)}</span></td>
-                    <td data-label="本轮开始">{competition.startedAt ? formatCompetitionTime(competition.startedAt) : "尚未开始"}</td>
+                    <td data-label="比赛状态"><span className={`dashboard-status ${question.phase === competition.phase ? competition.state : "not_started"}`}><i />{question.phase === "test" && testing ? "测试中" : question.phase === competition.phase ? competitionStatusLabel(competition) : question.status === "draft" ? "未开始" : "已停止"}</span></td>
+                    <td data-label="本轮开始">{question.phase === competition.phase && competition.startedAt ? formatCompetitionTime(competition.startedAt) : "--"}</td>
                     <td data-label="已提交">
                       {answerable ? (
                         <span className="dashboard-row-progress">
@@ -249,8 +248,8 @@ export function JudgeDashboard({
       <section className="dashboard-export-panel">
         <span className="dashboard-export-icon"><Archive /></span>
         <div>
-          <h2>全部答卷归档</h2>
-          <p>{answerableQuestions.length} 道题目，覆盖 {summary.answers.total} 份选手答题记录</p>
+          <h2>{phaseLabel}答卷归档</h2>
+          <p>{answerableQuestions.length} 道题目，覆盖 {summary.answers.submitted + summary.answers.drafting} 份已保存答题记录</p>
           {exportError && <span className="dashboard-export-error" role="status">{exportError}</span>}
         </div>
         <button
@@ -261,9 +260,10 @@ export function JudgeDashboard({
           onClick={() => void exportAnswers()}
         >
           {exporting ? <LoaderCircle className="spinning" /> : <Download />}
-          {exporting ? "正在生成答卷" : "导出全部答卷"}
+          {exporting ? "正在生成答卷" : `导出${phaseLabel}答卷`}
         </button>
       </section>
+      <CompetitionResetPanel competition={competition} disabled={competitionPending || loading} onChanged={onAnswersChanged} onPendingChange={onArchivePendingChange} />
     </div>
   );
 }

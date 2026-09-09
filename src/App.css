@@ -1928,6 +1928,12 @@ button:focus-visible,
   border-color: #972d2d;
 }
 
+.operation-mode-pill.ended {
+  color: #56636b;
+  background: #f1f4f5;
+  border-color: #d4dce0;
+}
+
 .mode-control {
   overflow: hidden;
   border-top: 3px solid #d0a041;

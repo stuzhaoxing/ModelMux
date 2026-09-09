@@ -11,7 +11,7 @@ export default async function AdminViewPage({
   params: Promise<{ view: string }>;
 }) {
   const { view } = await params;
-  if (view === "access") permanentRedirect("/admin");
+  if (view === "access" || view === "settings") permanentRedirect("/admin/competition");
   if (!isRoutedAdminViewId(view)) notFound();
   return <AdminConsole />;
 }

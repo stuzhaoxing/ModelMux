@@ -44,6 +44,8 @@ export default function AdminAccounts() {
   const [password, setPassword] = useState("");
   const [editingUserId, setEditingUserId] = useState<number | null>(null);
   const [editingDisplayName, setEditingDisplayName] = useState("");
+  const [editingUsername, setEditingUsername] = useState("");
+  const [editingPassword, setEditingPassword] = useState("");
   const [generatedCredentials, setGeneratedCredentials] = useState<GeneratedContestant | null>(null);
 
   const loadUsers = useCallback(async () => {
@@ -115,7 +117,7 @@ export default function AdminAccounts() {
 
   async function updateAccount(
     user: CompetitionUser,
-    changes: { active?: boolean; displayName?: string },
+    changes: { active?: boolean; displayName?: string; username?: string; password?: string },
     successMessage: string,
   ): Promise<boolean> {
     setPending(true);
@@ -140,24 +142,62 @@ export default function AdminAccounts() {
   function beginEdit(user: CompetitionUser) {
     setEditingUserId(user.id);
     setEditingDisplayName(user.displayName);
+    setEditingUsername(user.username);
+    setEditingPassword(user.password ?? "");
     setError(null);
     setNotice(null);
   }
 
-  async function saveDisplayName(user: CompetitionUser) {
+  async function saveAccount(user: CompetitionUser) {
+    if (pending) return;
     const nextName = editingDisplayName.trim();
+    const nextUsername = editingUsername.trim().toLowerCase();
     if (!nextName) {
       setError("显示姓名不能为空");
       return;
     }
-    if (await updateAccount(user, { displayName: nextName }, "显示姓名已更新")) {
-      setEditingUserId(null);
+    if (nextName.length > 100) {
+      setError("显示姓名最多 100 字");
+      return;
     }
+    if (!/^[a-zA-Z0-9._-]{2,64}$/.test(nextUsername)) {
+      setError("登录账号须为 2–64 位字母、数字、点、下划线或短横线");
+      return;
+    }
+    if (editingPassword && (editingPassword.length < 8 || editingPassword.length > 200)) {
+      setError("密码须为 8–200 位，留空则保留原密码");
+      return;
+    }
+    const changes = {
+      ...(nextName !== user.displayName ? { displayName: nextName } : {}),
+      ...(nextUsername !== user.username ? { username: nextUsername } : {}),
+      ...(editingPassword && editingPassword !== user.password ? { password: editingPassword } : {}),
+    };
+    if (Object.keys(changes).length === 0) {
+      setEditingUserId(null);
+      return;
+    }
+    const message = changes.username !== undefined || changes.password !== undefined
+      ? "账号信息已更新，该选手需使用新凭证重新登录"
+      : "账号信息已更新";
+    if (await updateAccount(user, changes, message)) {
+      setEditingUserId(null);
+      if (generatedCredentials?.username === user.username) setGeneratedCredentials(null);
+    }
+  }
+
+  function handleEditKeyDown(event: React.KeyboardEvent<HTMLInputElement>, user: CompetitionUser) {
+    if (event.nativeEvent.isComposing || pending) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void saveAccount(user);
+    }
+    if (event.key === "Escape") setEditingUserId(null);
   }
 
   async function copyAccount(user: CopyableContestant) {
     if (!user.password) {
-      setError("该账号没有可复制的密码，请重新生成账号");
+      setError("该账号没有可复制的密码，请编辑账号设置新密码");
       return;
     }
     const content = [
@@ -243,6 +283,7 @@ export default function AdminAccounts() {
           </div>
         </div>
         {(error || notice) && <div className={`account-message ${error ? "error" : "success"}`}>{error ?? notice}</div>}
+        {editingUserId !== null && <p className="account-edit-hint">可修改姓名、账号和密码；密码留空则保留原密码。修改账号或密码后，选手需重新登录。</p>}
         <div className="account-tabs" aria-label="选手账号统计">
           <span><UsersRound />全部选手 <strong>{users.length}</strong></span>
           <span><Check />当前启用 <strong>{users.filter((user) => user.active).length}</strong></span>
@@ -251,12 +292,18 @@ export default function AdminAccounts() {
           <div className="account-row account-table-header"><span>名字</span><span>账号</span><span>密码</span><span>最后登录</span><span>状态</span><span>操作</span></div>
           {users.map((user) => (
             <div className="account-row" key={user.id}>
-              <span className="account-name-cell">{editingUserId === user.id ? <input className="account-name-input" autoFocus maxLength={100} value={editingDisplayName} onChange={(event) => setEditingDisplayName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void saveDisplayName(user); if (event.key === "Escape") setEditingUserId(null); }} /> : <strong>{user.displayName}</strong>}</span>
-              <span className="account-credential account-identity-credential">{user.username}</span>
-              <span className={`account-credential ${user.password ? "" : "unavailable"}`}>{user.password ?? "历史账号无密码记录"}</span>
+              <span className="account-name-cell">{editingUserId === user.id ? (
+                <input className="account-name-input" aria-label="编辑显示姓名" autoFocus maxLength={100} disabled={pending} value={editingDisplayName} onChange={(event) => setEditingDisplayName(event.target.value)} onKeyDown={(event) => handleEditKeyDown(event, user)} />
+              ) : <strong>{user.displayName}</strong>}</span>
+              <span className="account-credential account-identity-credential">{editingUserId === user.id ? (
+                <input className="account-name-input" aria-label="编辑登录账号" autoComplete="off" maxLength={64} disabled={pending} value={editingUsername} onChange={(event) => setEditingUsername(event.target.value)} onKeyDown={(event) => handleEditKeyDown(event, user)} />
+              ) : user.username}</span>
+              <span className={`account-credential ${user.password || editingUserId === user.id ? "" : "unavailable"}`}>{editingUserId === user.id ? (
+                <input className="account-name-input" aria-label="编辑密码" type="text" autoComplete="off" maxLength={200} placeholder="留空保留原密码" disabled={pending} value={editingPassword} onChange={(event) => setEditingPassword(event.target.value)} onKeyDown={(event) => handleEditKeyDown(event, user)} />
+              ) : user.password ?? "历史账号无密码记录"}</span>
               <span className="account-time">{formatCompetitionTime(user.lastLoginAt)}</span>
               <span><i className={`account-state ${user.active ? "active" : "disabled"}`}>{user.active ? "启用" : "停用"}</i></span>
-              <span className="account-actions">{editingUserId === user.id ? <><button type="button" title="保存显示姓名" aria-label="保存显示姓名" disabled={pending} onClick={() => void saveDisplayName(user)}><Check /></button><button type="button" title="取消编辑" aria-label="取消编辑" disabled={pending} onClick={() => setEditingUserId(null)}><X /></button></> : <><button type="button" title="编辑显示姓名" aria-label={`编辑 ${user.displayName} 的显示姓名`} disabled={pending} onClick={() => beginEdit(user)}><Pencil /></button><button type="button" title="复制登录信息" aria-label={`复制 ${user.displayName} 的登录信息`} disabled={pending || !user.password} onClick={() => void copyAccount(user)}><Copy /></button><button type="button" title={user.active ? "停用账号" : "启用账号"} aria-label={`${user.active ? "停用" : "启用"} ${user.displayName}`} disabled={pending} onClick={() => void updateAccount(user, { active: !user.active }, user.active ? "账号已停用" : "账号已启用")}><Power /></button><button type="button" title="删除账号" aria-label={`删除 ${user.displayName}`} disabled={pending} onClick={() => void deleteAccount(user)}><Trash2 /></button></>}</span>
+              <span className="account-actions">{editingUserId === user.id ? <><button type="button" title="保存账号信息" aria-label="保存账号信息" disabled={pending} onClick={() => void saveAccount(user)}><Check /></button><button type="button" title="取消编辑" aria-label="取消编辑" disabled={pending} onClick={() => setEditingUserId(null)}><X /></button></> : <><button type="button" title="编辑账号信息" aria-label={`编辑 ${user.displayName} 的账号信息`} disabled={pending} onClick={() => beginEdit(user)}><Pencil /></button><button type="button" title="复制登录信息" aria-label={`复制 ${user.displayName} 的登录信息`} disabled={pending || !user.password} onClick={() => void copyAccount(user)}><Copy /></button><button type="button" title={user.active ? "停用账号" : "启用账号"} aria-label={`${user.active ? "停用" : "启用"} ${user.displayName}`} disabled={pending} onClick={() => void updateAccount(user, { active: !user.active }, user.active ? "账号已停用" : "账号已启用")}><Power /></button><button type="button" title="删除账号" aria-label={`删除 ${user.displayName}`} disabled={pending} onClick={() => void deleteAccount(user)}><Trash2 /></button></>}</span>
             </div>
           ))}
           {users.length === 0 && !loading && <div className="account-empty"><UsersRound /><strong>还没有选手账号</strong><span>先从左侧生成选手账号</span></div>}

@@ -13,7 +13,6 @@ import {
   competitionScreenScheduleFromStart,
   competitionScreenStageAt,
   competitionScreenTokenBarScales,
-  competitionMockTokenMinute,
   parseCompetitionSchedule,
 } from "./screen-model";
 
@@ -74,13 +73,25 @@ describe("competition screen model", () => {
     expect(competitionScreenStageAt({ schedule: noSchedule, mode: "competition", questionTotal: 2, publishedQuestions: 0, closedQuestions: 2, now: 0 })).toBe("finished");
   });
 
+  it.each(["not_started", "running", "ended"] as const)("keeps testing untimed even with legacy %s state and expired schedule", (competitionState) => {
+    expect(competitionScreenStageAt({
+      schedule,
+      mode: "test",
+      questionTotal: 2,
+      publishedQuestions: 0,
+      closedQuestions: 2,
+      competitionState,
+      now: Date.parse("2026-09-09T08:00:00Z"),
+    })).toBe("rehearsal");
+  });
+
   it("classifies contestant progress without treating drafts as submissions", () => {
     expect(competitionScreenContestantStatus({ questionTotal: 0, submitted: 0, drafting: 0 })).toBe("waiting");
     expect(competitionScreenContestantStatus({ questionTotal: 2, submitted: 0, drafting: 0 })).toBe("not_started");
     expect(competitionScreenContestantStatus({ questionTotal: 2, submitted: 1, drafting: 1 })).toBe("drafting");
     expect(competitionScreenContestantStatus({ questionTotal: 2, submitted: 2, drafting: 0 })).toBe("submitted");
-    expect(competitionScreenProgressCount({ submitted: 0, drafting: 1 }, 5)).toBe(1);
-    expect(competitionScreenProgressCount({ submitted: 1, drafting: 1 }, 5)).toBe(2);
+    expect(competitionScreenProgressCount({ submitted: 0, drafting: 5 }, 5)).toBe(0);
+    expect(competitionScreenProgressCount({ submitted: 1, drafting: 4 }, 5)).toBe(1);
     expect(competitionScreenProgressCount({ submitted: 5, drafting: 1 }, 5)).toBe(5);
   });
 
@@ -150,12 +161,11 @@ describe("competition screen model", () => {
       mode: "competition",
       stage: "live",
       schedule: { configured: false, startAt: null, endAt: null },
-      competition: { state: "running", durationMinutes: 90, startedAt: "2026-08-21T01:00:00.000Z", endsAt: "2026-08-21T02:30:00.000Z", stoppedAt: null },
+      competition: { phase: "competition", state: "running", durationMinutes: 90, startedAt: "2026-08-21T01:00:00.000Z", endsAt: "2026-08-21T02:30:00.000Z", stoppedAt: null },
       notice: { title: "赛前提醒", content: "", enabled: false, updatedAt: null },
       summary: { contestantTotal: contestants.length, questionTotal: 5, publishedQuestions: 5, closedQuestions: 0, fullySubmitted: 0, unfinished: 0, drafting: contestants.length, notStarted: 0, totalTokens: 0 },
       tokenMinutes: Array<number>(90).fill(0),
       contestants,
-      simulation: null,
     });
     const activityOnly = { ...contestant, lastActivityAt: "2026-08-21T01:01:00.000Z" };
     expect(competitionScreenProgressChanges(snapshot([contestant]), snapshot([activityOnly]))).toEqual([]);
@@ -164,7 +174,9 @@ describe("competition screen model", () => {
     expect(changes).toHaveLength(1);
     expect(changes[0]).toMatchObject({ id: 7, index: 0, questionTotal: 5 });
     const submittedSameQuestion = { ...contestant, submitted: 2, drafting: 0 };
-    expect(competitionScreenProgressChanges(snapshot([contestant]), snapshot([submittedSameQuestion]))).toEqual([]);
+    expect(competitionScreenProgressChanges(snapshot([contestant]), snapshot([submittedSameQuestion]))).toHaveLength(1);
+    const savedAnotherDraft = { ...contestant, drafting: 2, notStarted: 2 };
+    expect(competitionScreenProgressChanges(snapshot([contestant]), snapshot([savedAnotherDraft]))).toEqual([]);
   });
 
   it("normalizes the latest Token buckets for the bottom chart", () => {
@@ -177,7 +189,7 @@ describe("competition screen model", () => {
     expect(scales.slice(-3)).toEqual([0, .5, 1]);
   });
 
-  it("shows the public notice only before the competition starts", () => {
+  it("shows the saved notice only during testing, hiding it during and after the competition", () => {
     const notice = { title: "接口信息", content: "http://10.0.0.8:1444/v1", enabled: true, updatedAt: null };
     expect(competitionScreenNoticeVisible({ competitionState: "not_started", notice })).toBe(true);
     expect(competitionScreenNoticeVisible({ competitionState: "running", notice })).toBe(false);
@@ -189,13 +201,7 @@ describe("competition screen model", () => {
     expect(competitionScreenNoticeVisible({
       competitionState: "not_started",
       notice: { ...notice, enabled: false },
-    })).toBe(false);
+    })).toBe(true);
   });
 
-  it("generates deterministic Token buckets for the accelerated preview", () => {
-    const samples = Array.from({ length: 90 }, (_, index) => competitionMockTokenMinute(index));
-    expect(samples.every((value) => value >= 6_000_000)).toBe(true);
-    expect(new Set(samples).size).toBeGreaterThan(12);
-    expect(competitionMockTokenMinute(10)).toBe(competitionMockTokenMinute(10));
-  });
 });

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -6,17 +6,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   authenticateContestantApiKey,
+  getCompetitionControl,
   recordCompetitionTokenUsage,
 } from "../competition/repository";
 import { proxyChatCompletions } from "./proxy";
 import { ossInlineAssetStoreFromEnv } from "./oss-inline-assets";
-import { setGatewayServiceEnabled } from "./service-state";
 
 vi.mock("../competition/repository", async (importOriginal) => {
   const original = await importOriginal<typeof import("../competition/repository")>();
   return {
     ...original,
     authenticateContestantApiKey: vi.fn(),
+    getCompetitionControl: vi.fn(),
     recordCompetitionTokenUsage: vi.fn(),
   };
 });
@@ -42,7 +43,6 @@ const ENV_KEYS = [
   "DEEPSEEK_API_KEYS",
   "DASHSCOPE_API_KEYS",
   "DASHSCOPE_MODEL_QWEN_MAX",
-  "SILICONFLOW_API_KEYS",
   "ARK_API_KEYS",
 ];
 
@@ -74,10 +74,10 @@ describe.sequential("chat completion proxy", () => {
     process.env.MODELMUX_CLIENT_KEYS = "client-secret";
     process.env.DEEPSEEK_API_KEYS = "deepseek-secret";
     process.env.DASHSCOPE_API_KEYS = "dashscope-secret";
-    process.env.SILICONFLOW_API_KEYS = "provider-secret";
     vi.mocked(ossInlineAssetStoreFromEnv).mockReturnValue(null);
     vi.mocked(authenticateContestantApiKey).mockResolvedValue(null);
     vi.mocked(recordCompetitionTokenUsage).mockResolvedValue(undefined);
+    vi.mocked(getCompetitionControl).mockResolvedValue({ generation: 7, phase: "test", state: "not_started", durationMinutes: 90, startedAt: null, endsAt: null, stoppedAt: null });
   });
 
   afterEach(async () => {
@@ -87,17 +87,16 @@ describe.sequential("chat completion proxy", () => {
     await rm(dataDirectory, { force: true, recursive: true });
   });
 
-  it("rejects new requests before authentication when service is stopped", async () => {
+  it("still authenticates requests when a legacy stop file exists", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    await setGatewayServiceEnabled(false);
+    await writeFile(path.join(dataDirectory, "gateway-service-state.json"), JSON.stringify({ enabled: false, updatedAt: new Date().toISOString() }));
 
     const response = await proxyChatCompletions(request("deepseek-v4-pro", "wrong"));
     const payload = (await response.json()) as { error: { code: string } };
 
-    expect(response.status).toBe(503);
-    expect(response.headers.get("Retry-After")).toBe("3600");
-    expect(payload.error.code).toBe("service_suspended");
+    expect(response.status).toBe(401);
+    expect(payload.error.code).toBe("invalid_api_key");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -111,6 +110,17 @@ describe.sequential("chat completion proxy", () => {
     expect(response.status).toBe(401);
     expect(payload.error.code).toBe("invalid_api_key");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("forwards authenticated requests despite a legacy stop file", async () => {
+    await writeFile(path.join(dataDirectory, "gateway-service-state.json"), JSON.stringify({ enabled: false, updatedAt: new Date().toISOString() }));
+    const fetchMock = vi.fn(async () => Response.json({ id: "always-on" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await proxyChatCompletions(request());
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it("accepts only Bearer authentication on the OpenAI-compatible API", async () => {
@@ -431,15 +441,34 @@ describe.sequential("chat completion proxy", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
-  it("only rewrites the model ID on SiliconFlow failover", async () => {
+  it("only rewrites the model ID when failing over to a backup route", async () => {
+    process.env.BACKUP_KEYS = "backup-secret";
+    process.env.MODELMUX_ROUTES_JSON = JSON.stringify({
+      "deepseek-v4-pro": [
+        {
+          provider: "deepseek",
+          baseUrl: "https://api.deepseek.com",
+          upstreamModel: "deepseek-v4-pro",
+          apiKeyEnv: "DEEPSEEK_API_KEYS",
+          priority: 100,
+        },
+        {
+          provider: "backup",
+          baseUrl: "https://backup.example.com",
+          upstreamModel: "backup/DeepSeek-V3.2",
+          apiKeyEnv: "BACKUP_KEYS",
+          priority: 70,
+        },
+      ],
+    });
     delete process.env.DEEPSEEK_API_KEYS;
     const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-      expect(body.model).toBe("Pro/deepseek-ai/DeepSeek-V3.2");
+      expect(body.model).toBe("backup/DeepSeek-V3.2");
       expect(body.thinking).toEqual({ type: "enabled" });
       expect(body.reasoning_effort).toBe("max");
       expect(body.enable_thinking).toBeUndefined();
-      return Response.json({ id: "siliconflow-deepseek-1" });
+      return Response.json({ id: "backup-deepseek-1" });
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -454,6 +483,8 @@ describe.sequential("chat completion proxy", () => {
     }));
 
     expect(response.status).toBe(200);
+
+    delete process.env.BACKUP_KEYS;
   });
 
   it("fails over before returning an upstream error", async () => {
@@ -500,7 +531,6 @@ describe.sequential("chat completion proxy", () => {
 
   it("returns a stable error when no provider key is configured", async () => {
     delete process.env.DEEPSEEK_API_KEYS;
-    delete process.env.SILICONFLOW_API_KEYS;
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
@@ -566,6 +596,6 @@ describe.sequential("chat completion proxy", () => {
       inputTokens: 31,
       outputTokens: 11,
       totalTokens: 42,
-    });
+    }, 7);
   });
 });

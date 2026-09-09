@@ -77,10 +77,6 @@ describe("gateway config", () => {
           provider: "aliyun",
           upstreamModel: "qwen3.7-max-newer-snapshot",
         },
-        {
-          provider: "siliconflow",
-          upstreamModel: "Qwen/Qwen3.5-397B-A17B",
-        },
       ],
     });
   });
@@ -158,7 +154,8 @@ describe("gateway config", () => {
       MODELMUX_DEPLOYMENT_MODE: "public",
       MODELMUX_PUBLIC_BASE_URL: "https://debug.example.com/",
       MODELMUX_CLIENT_KEYS: "client-key",
-      SILICONFLOW_API_KEYS: "provider-key",
+      DEEPSEEK_API_KEYS: "deepseek-key",
+      DASHSCOPE_API_KEYS: "dashscope-key",
     });
     const ready = gatewayStatus("http://localhost:4000", 1, readyEnv);
 
@@ -180,16 +177,12 @@ describe("gateway config", () => {
     });
   });
 
-  it("reports suspended independently of provider configuration", () => {
-    const status = gatewayStatus("http://localhost:4000", 1, env(), {
-      enabled: false,
-      updatedAt: "2026-08-13T02:30:00.000Z",
-      stateFileValid: true,
-    });
+  it("always enables service while reporting configuration readiness", () => {
+    const status = gatewayStatus("http://localhost:4000", 1, env());
 
-    expect(status.state).toBe("suspended");
-    expect(status.serviceEnabled).toBe(false);
-    expect(status.serviceStateUpdatedAt).toBe("2026-08-13T02:30:00.000Z");
+    expect(status.state).toBe("needs_config");
+    expect(status.serviceEnabled).toBe(true);
+    expect(status.serviceStateUpdatedAt).toBeNull();
   });
 
   it("reports explicit internal and external ingress ports", () => {
@@ -246,7 +239,7 @@ describe("gateway config", () => {
     );
   });
 
-  it("uses the three providers across the five official product models", () => {
+  it("routes the five official product models to their first-party provider only", () => {
     const config = loadGatewayConfig(env());
     const providers = new Set(
       config.models.flatMap((model) =>
@@ -254,9 +247,10 @@ describe("gateway config", () => {
       ),
     );
 
-    expect(providers).toEqual(
-      new Set(["deepseek", "aliyun", "siliconflow"]),
-    );
+    expect(providers).toEqual(new Set(["deepseek", "aliyun"]));
+    expect(
+      config.models.every((model) => model.routes.length === 1),
+    ).toBe(true);
     expect(
       config.models.find((model) => model.alias === "qwen3.7-flash")?.routes[0],
     ).toMatchObject({

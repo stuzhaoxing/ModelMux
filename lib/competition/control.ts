@@ -1,6 +1,19 @@
-import type { CompetitionControl } from "./types";
+import type { CompetitionControl, QuestionPhase } from "./types";
+
+export function competitionModeFromControl(control: CompetitionControl): QuestionPhase {
+  return control.startedAt && control.phase === "competition" ? "competition" : "test";
+}
+
+export function competitionIsTesting(control: CompetitionControl): boolean {
+  return control.phase === "test" || control.state === "not_started";
+}
+
+export function competitionAllowsAnswers(control: CompetitionControl): boolean {
+  return competitionIsTesting(control) || control.state === "running";
+}
 
 export interface StoredCompetitionControl {
+  phase?: QuestionPhase;
   status: "not_started" | "running" | "ended";
   durationMinutes: number | string;
   startedAt: string | null;
@@ -25,6 +38,17 @@ export function competitionControlFromStored(
   now = Date.now(),
 ): CompetitionControl {
   const startedAt = timestamp(stored.startedAt);
+  // Legacy timed tests are now the same unlimited pre-competition stage.
+  if (stored.phase === "test" || startedAt === null) {
+    return {
+      phase: "test",
+      state: "not_started",
+      durationMinutes: stored.phase === "test" ? 90 : Math.max(1, Number(stored.durationMinutes) || 90),
+      startedAt: null,
+      endsAt: null,
+      stoppedAt: null,
+    };
+  }
   const endsAt = timestamp(stored.endsAt);
   const running = stored.status === "running"
     && startedAt !== null
@@ -32,6 +56,7 @@ export function competitionControlFromStored(
     && startedAt <= now
     && endsAt > now;
   return {
+    phase: stored.phase ?? "competition",
     state: running ? "running" : startedAt === null ? "not_started" : "ended",
     durationMinutes: Math.max(1, Number(stored.durationMinutes) || 90),
     startedAt: isoTime(stored.startedAt),

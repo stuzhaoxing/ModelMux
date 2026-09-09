@@ -3,6 +3,7 @@
 import { LoaderCircle, MonitorUp, Save } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { competitionScreenNoticeVisible } from "@/lib/competition/screen-model";
 import type {
   CompetitionControlState,
   CompetitionScreenNotice,
@@ -28,7 +29,7 @@ export function ScreenNoticeEditor({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  function updateDraft(patch: Partial<Pick<CompetitionScreenNotice, "title" | "content" | "enabled">>) {
+  function updateDraft(patch: Partial<Pick<CompetitionScreenNotice, "title" | "content">>) {
     setNotice((current) => ({ ...current, ...patch }));
     setMessage(null);
     setError(null);
@@ -47,7 +48,7 @@ export function ScreenNoticeEditor({
   async function saveNotice(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saving || loading) return;
-    if (notice.enabled && !notice.content.trim()) {
+    if (!notice.content.trim()) {
       setError("展示公告前请先填写正文");
       return;
     }
@@ -62,13 +63,12 @@ export function ScreenNoticeEditor({
           body: JSON.stringify({
             title: notice.title,
             content: notice.content,
-            enabled: notice.enabled,
           }),
         },
       );
       setNotice(result.notice);
       setSavedNotice(result.notice);
-      setMessage(result.notice.enabled ? "赛前公告已保存并开启" : "赛前公告已保存，当前关闭");
+      setMessage("公告已保存，仅在测试状态展示；比赛中和比赛结束后隐藏");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "公告保存失败");
     } finally {
@@ -76,17 +76,18 @@ export function ScreenNoticeEditor({
     }
   }
 
-  const visibleNow = savedNotice.enabled && competitionState === "not_started";
-  const displayStatus = !savedNotice.enabled
-    ? "未开启"
-    : visibleNow
-      ? "大屏展示中"
-      : competitionState === "running"
-        ? "比赛中不展示"
-        : "当前状态不展示";
+  const visibleNow = competitionScreenNoticeVisible({ competitionState, notice: savedNotice });
+  const displayStatus = loading
+    ? "正在读取"
+    : !savedNotice.content.trim()
+      ? "待填写公告"
+      : visibleNow
+        ? "大屏展示中"
+        : competitionState === "running"
+          ? "比赛中不展示"
+          : "比赛已结束，不展示";
   const dirty = notice.title !== savedNotice.title
-    || notice.content !== savedNotice.content
-    || notice.enabled !== savedNotice.enabled;
+    || notice.content !== savedNotice.content;
 
   return (
     <section className="dashboard-screen-notice" aria-labelledby="screen-notice-heading">
@@ -124,16 +125,6 @@ export function ScreenNoticeEditor({
           />
         </label>
         <footer>
-          <label className="dashboard-screen-notice-toggle">
-            <input
-              type="checkbox"
-              checked={notice.enabled}
-              disabled={loading || saving}
-              onChange={(event) => updateDraft({ enabled: event.target.checked })}
-            />
-            <span aria-hidden><i /></span>
-            <strong>比赛未开始时展示</strong>
-          </label>
           <output className={error ? "error" : ""} aria-live="polite">{error ?? message ?? (dirty ? "有未保存修改" : null)}</output>
           <button className="primary-action" type="submit" disabled={loading || saving || !dirty || !notice.title.trim()}>
             {loading || saving ? <LoaderCircle className="spinning" /> : <Save />}

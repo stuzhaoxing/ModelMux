@@ -1,10 +1,9 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { setGatewayServiceEnabled } from "@/lib/gateway/service-state";
 
 import { GET } from "./route";
 
@@ -77,14 +76,18 @@ describe.sequential("public models endpoint", () => {
     expect(payload.error.code).toBe("invalid_api_key");
   });
 
-  it("returns the suspended error while model service is stopped", async () => {
-    await setGatewayServiceEnabled(false);
-
-    const response = await GET(new Request("http://localhost:4000/v1/models"));
-    const payload = (await response.json()) as { error: { code: string } };
-
+  it("reports missing authentication configuration", async () => {
+    delete process.env.MODELMUX_CLIENT_KEYS;
+    const response = await GET(authenticatedRequest());
     expect(response.status).toBe(503);
-    expect(response.headers.get("Retry-After")).toBe("3600");
-    expect(payload.error.code).toBe("service_suspended");
+    expect((await response.json()).error.code).toBe("client_auth_not_configured");
+  });
+
+  it("serves models despite a legacy stop file", async () => {
+    await writeFile(path.join(dataDirectory, "gateway-service-state.json"), JSON.stringify({ enabled: false, updatedAt: new Date().toISOString() }));
+
+    const response = await GET(authenticatedRequest());
+    expect(response.status).toBe(200);
+    expect((await response.json()).data.length).toBeGreaterThan(0);
   });
 });

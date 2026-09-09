@@ -2,12 +2,21 @@ import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({ rows: vi.fn() }));
+
+vi.mock("./db", () => ({
+  competitionPool: vi.fn(),
+  ensureCompetitionSchema: vi.fn(),
+  rows: mocks.rows,
+}));
 
 import {
   deleteStoredMediaFiles,
   discardMediaUpload,
   mediaContentDisposition,
+  readMedia,
   receiveMediaUpload,
 } from "./media";
 
@@ -114,5 +123,64 @@ describe("disk-backed media uploads", () => {
     await deleteStoredMediaFiles(["first.upload", "second.png", "already-missing.upload"]);
 
     expect(await readdir(path.join(dataDirectory, "uploads"))).toEqual([]);
+  });
+});
+
+describe("reading stored media back", () => {
+  let dataDirectory: string;
+
+  beforeEach(async () => {
+    dataDirectory = await mkdtemp(path.join(tmpdir(), "modelmux-media-read-test-"));
+    process.env.MODELMUX_DATA_DIR = dataDirectory;
+    mocks.rows.mockReset();
+  });
+
+  afterEach(async () => {
+    delete process.env.MODELMUX_DATA_DIR;
+    await rm(dataDirectory, { force: true, recursive: true });
+  });
+
+  it("streams Uint8Array chunks the Node response writer can pipe", async () => {
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+    await mkdir(path.join(dataDirectory, "uploads"), { recursive: true });
+    await writeFile(path.join(dataDirectory, "uploads", "stored.png"), bytes);
+    mocks.rows.mockResolvedValue([{
+      uploader_id: 7,
+      uploader_role: "judge",
+      purpose: "question",
+      kind: "image",
+      storage_name: "stored.png",
+      original_name: "image.png",
+      mime_type: "image/png",
+      byte_size: String(bytes.byteLength),
+    }]);
+
+    const media = await readMedia(1);
+    expect(media).not.toBeNull();
+
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of media!.stream as AsyncIterable<unknown>) {
+      // An ArrayBuffer chunk breaks the response pipe with ERR_INVALID_ARG_TYPE.
+      expect(chunk).toBeInstanceOf(Uint8Array);
+      chunks.push(chunk as Uint8Array);
+    }
+
+    expect(Buffer.concat(chunks)).toEqual(Buffer.from(bytes));
+    expect(media!.byteSize).toBe(String(bytes.byteLength));
+  });
+
+  it("reports a missing disk file as absent media", async () => {
+    mocks.rows.mockResolvedValue([{
+      uploader_id: null,
+      uploader_role: "judge",
+      purpose: "question",
+      kind: "file",
+      storage_name: "gone.upload",
+      original_name: "gone.pdf",
+      mime_type: "application/pdf",
+      byte_size: "12",
+    }]);
+
+    expect(await readMedia(1)).toBeNull();
   });
 });

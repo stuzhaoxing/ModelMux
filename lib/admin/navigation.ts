@@ -1,5 +1,4 @@
 export const adminViewPaths = {
-  overview: "/admin",
   competition: "/admin/competition",
   questions: "/admin/questions",
   answers: "/admin/answers",
@@ -7,7 +6,6 @@ export const adminViewPaths = {
   accounts: "/admin/accounts",
   models: "/admin/models",
   logs: "/admin/logs",
-  settings: "/admin/settings",
 } as const;
 
 export type AdminViewId = keyof typeof adminViewPaths;
@@ -27,10 +25,9 @@ const routedAdminViewIds = [
   "accounts",
   "models",
   "logs",
-  "settings",
 ] as const;
 
-export function isRoutedAdminViewId(value: string): value is Exclude<AdminViewId, "overview"> {
+export function isRoutedAdminViewId(value: string): value is AdminViewId {
   return routedAdminViewIds.some((viewId) => viewId === value);
 }
 
@@ -39,7 +36,7 @@ export function adminViewFromPathname(pathname: string): AdminViewId {
   const match = Object.entries(adminViewPaths).find(
     ([, viewPath]) => viewPath === normalizedPathname,
   );
-  return (match?.[0] as AdminViewId | undefined) ?? "overview";
+  return (match?.[0] as AdminViewId | undefined) ?? "competition";
 }
 
 export function isAdminJudgeViewId(view: AdminViewId): boolean {

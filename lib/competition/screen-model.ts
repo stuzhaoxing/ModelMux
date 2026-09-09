@@ -61,14 +61,6 @@ export interface CompetitionScreenSnapshot {
   summary: CompetitionScreenSummary;
   tokenMinutes: number[];
   contestants: CompetitionScreenContestant[];
-  simulation: CompetitionScreenSimulation | null;
-}
-
-export interface CompetitionScreenSimulation {
-  startedAt: string;
-  elapsedMinutes: number;
-  totalMinutes: number;
-  realMsPerMinute: number;
 }
 
 export interface CompetitionScreenGrid {
@@ -168,7 +160,7 @@ export function competitionScreenStageAt(input: {
   competitionState?: CompetitionControlState;
   now: number;
 }): CompetitionScreenStage {
-  if (input.competitionState === "not_started") return "setup";
+  if (input.mode === "test" || input.competitionState === "not_started") return "rehearsal";
   if (input.competitionState === "ended") return "finished";
   if (input.competitionState === "running") {
     if (input.schedule.configured && input.schedule.endAt && input.now >= Date.parse(input.schedule.endAt)) return "finished";
@@ -204,7 +196,7 @@ export function competitionScreenProgressCount(
   questionTotal: number,
 ): number {
   if (questionTotal <= 0) return 0;
-  return Math.min(questionTotal, Math.max(0, contestant.submitted + contestant.drafting));
+  return Math.min(questionTotal, Math.max(0, contestant.submitted));
 }
 
 export function competitionScreenDisplayStatus(input: {
@@ -295,15 +287,5 @@ export function competitionScreenNoticeVisible(input: {
   notice: CompetitionScreenNotice;
 }): boolean {
   return input.competitionState === "not_started"
-    && input.notice.enabled
     && input.notice.content.trim().length > 0;
-}
-
-export function competitionMockTokenMinute(tick: number): number {
-  const safeTick = Number.isFinite(tick) ? Math.max(0, Math.floor(tick)) : 0;
-  const wave = 46_000_000
-    + Math.sin(safeTick * .72) * 18_000_000
-    + Math.sin(safeTick * .21) * 9_500_000
-    + (safeTick % 9 === 0 ? 22_000_000 : 0);
-  return Math.max(6_000_000, Math.round(wave / 100_000) * 100_000);
 }

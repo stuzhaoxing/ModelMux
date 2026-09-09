@@ -1,6 +1,6 @@
 import type { RowDataPacket } from "mysql2";
 
-import { operationModeState } from "@/lib/gateway/operation-mode";
+import { competitionModeFromControl } from "./control";
 
 import { rows } from "./db";
 import { getCompetitionControl, getCompetitionScreenNotice } from "./repository";
@@ -55,11 +55,11 @@ export async function getCompetitionScreenSnapshot(
   env: NodeJS.ProcessEnv = process.env,
   now = Date.now(),
 ): Promise<CompetitionScreenSnapshot> {
-  const [modeState, competition, notice] = await Promise.all([
-    operationModeState(),
+  const [competition, notice] = await Promise.all([
     getCompetitionControl(now),
     getCompetitionScreenNotice(),
   ]);
+  const mode = competitionModeFromControl(competition);
   const usageStartedAt = competition.startedAt ? Date.parse(competition.startedAt) : null;
   const usageStoppedAt = competition.stoppedAt
     ? Date.parse(competition.stoppedAt)
@@ -76,10 +76,11 @@ export async function getCompetitionScreenSnapshot(
   const [questionRows, contestantRows, tokenTotalRows, tokenMinuteRows] = await Promise.all([
     rows<QuestionSummaryRow[]>(
       `SELECT COUNT(*) AS question_total,
-         COALESCE(SUM(status = 'published'), 0) AS published_questions,
-         COALESCE(SUM(status = 'closed'), 0) AS closed_questions
+         COALESCE(SUM(phase = 'test' OR status = 'published'), 0) AS published_questions,
+         COALESCE(SUM(phase = 'competition' AND status = 'closed'), 0) AS closed_questions
        FROM competition_questions
-       WHERE status IN ('published', 'closed')`,
+       WHERE phase = ? AND (phase = 'test' OR status IN ('published', 'closed'))`,
+      [mode],
     ),
     rows<ContestantScreenRow[]>(
       `SELECT u.id, u.display_name,
@@ -91,10 +92,11 @@ export async function getCompetitionScreenSnapshot(
        FROM competition_users u
        LEFT JOIN competition_answers a ON a.contestant_id = u.id
        LEFT JOIN competition_questions q
-         ON q.id = a.question_id AND q.status IN ('published', 'closed')
+         ON q.id = a.question_id AND q.phase = ? AND (q.phase = 'test' OR q.status IN ('published', 'closed'))
        WHERE u.role = 'contestant' AND u.active = TRUE AND u.deleted_at IS NULL
        GROUP BY u.id, u.display_name
        ORDER BY u.display_name, u.id`,
+      [mode],
     ),
     usageQueryValues === null
       ? Promise.resolve([] as TokenTotalRow[])
@@ -127,7 +129,7 @@ export async function getCompetitionScreenSnapshot(
     : competitionScreenScheduleFromStart(null, competitionCountdownMinutes(env));
   const screenStage = competitionScreenStageAt({
     schedule,
-    mode: modeState.mode,
+    mode,
     questionTotal,
     publishedQuestions,
     closedQuestions,
@@ -194,7 +196,7 @@ export async function getCompetitionScreenSnapshot(
 
   return {
     generatedAt: new Date(now).toISOString(),
-    mode: modeState.mode,
+    mode,
     stage: screenStage,
     schedule,
     competition,
@@ -202,6 +204,5 @@ export async function getCompetitionScreenSnapshot(
     summary,
     tokenMinutes,
     contestants,
-    simulation: null,
   };
 }

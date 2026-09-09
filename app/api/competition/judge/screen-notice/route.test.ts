@@ -50,7 +50,7 @@ describe("judge screen notice", () => {
     expect(await response.json()).toEqual({ notice });
   });
 
-  it("trims and saves an enabled notice", async () => {
+  it.each([undefined, false, true])("trims and saves an automatic notice with legacy enabled=%s", async (enabled) => {
     const response = await PATCH(new NextRequest(
       "http://localhost/api/competition/judge/screen-notice",
       {
@@ -58,7 +58,7 @@ describe("judge screen notice", () => {
         body: JSON.stringify({
           title: "  接口信息  ",
           content: "  API Base URL\nhttp://10.0.0.8:1444/v1  ",
-          enabled: true,
+          enabled,
         }),
       },
     ));
@@ -71,12 +71,12 @@ describe("judge screen notice", () => {
     });
   });
 
-  it("rejects an enabled notice without content and blocks cross-origin writes", async () => {
+  it("rejects a notice without content and blocks cross-origin writes", async () => {
     const invalid = await PATCH(new NextRequest(
       "http://localhost/api/competition/judge/screen-notice",
       {
         method: "PATCH",
-        body: JSON.stringify({ title: "接口信息", content: "", enabled: true }),
+        body: JSON.stringify({ title: "接口信息", content: "" }),
       },
     ));
     expect(invalid.status).toBe(400);

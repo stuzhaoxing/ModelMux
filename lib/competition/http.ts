@@ -68,10 +68,17 @@ export function competitionError(error: unknown): NextResponse {
 
   if (duplicate) return NextResponse.json({ error: "登录账号已经存在" }, { status: 409 });
   if (invalid) return NextResponse.json({ error: "提交内容不完整或格式不正确" }, { status: 400 });
+  if (code === "competition_generation_changed") return NextResponse.json({ error: "答题数据已重置或恢复，请刷新页面后继续", code }, { status: 409 });
+  if (code === "archive_running") return NextResponse.json({ error: "比赛进行中不能重置或恢复，请先停止比赛" }, { status: 409 });
+  if (code === "archive_not_found") return NextResponse.json({ error: "归档不存在" }, { status: 404 });
+  if (code === "archive_incompatible") return NextResponse.json({ error: "归档中的题目或选手已被修改或删除，无法直接恢复；请下载归档核对，当前数据未变更" }, { status: 409 });
   if (code === "question_not_found") return NextResponse.json({ error: "题目不存在" }, { status: 404 });
+  if (code === "question_phase_changed") return NextResponse.json({ error: "作答阶段已切换，请刷新题目" }, { status: 409 });
+  if (code === "competition_already_running") return NextResponse.json({ error: "比赛进行中，请勿重复开始" }, { status: 409 });
+  if (code === "competition_reset_required") return NextResponse.json({ error: "比赛已结束，请先归档并重置回到测试状态，再开始下一场比赛" }, { status: 409 });
   if (code === "question_not_open") return NextResponse.json({ error: "题目已经关闭，不能继续作答" }, { status: 409 });
   if (code === "answer_locked") return NextResponse.json({ error: "答案已最终提交，不能再修改" }, { status: 409 });
-  if (code === "question_set_empty") return NextResponse.json({ error: "请先保存至少一道题目" }, { status: 409 });
+  if (code === "question_set_empty") return NextResponse.json({ error: "请先为本阶段保存至少一道题目" }, { status: 409 });
   if (code === "question_set_published") return NextResponse.json({ error: "题目已经统一发布，不能再次发布或新增" }, { status: 409 });
   if (code === "question_set_conflict") return NextResponse.json({ error: "题目集刚刚发生变化，请刷新后重试" }, { status: 409 });
   if (code === "competition_running") return NextResponse.json({ error: "比赛进行中不能管理题目，请先停止比赛" }, { status: 409 });

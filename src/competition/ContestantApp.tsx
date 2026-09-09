@@ -13,7 +13,6 @@ import {
   RotateCcw,
   Save,
   Send,
-  TimerReset,
   TriangleAlert,
   Trash2,
 } from "lucide-react";
@@ -25,6 +24,7 @@ import {
   contestantViewRoutes,
   type ContestantView,
 } from "@/lib/competition/navigation";
+import { competitionAllowsAnswers } from "@/lib/competition/control";
 import { answerSaveCoversCurrentRevision } from "@/lib/competition/answer-save";
 import { eventStreamRetryDelayMs } from "@/lib/competition/event-stream";
 import {
@@ -37,10 +37,8 @@ import {
   type LocalAnswerDraft,
 } from "@/lib/competition/local-draft";
 import type { CompetitionControl, CompetitionQuestion, ContestantAnswer, SessionUser } from "@/lib/competition/types";
-import type { OperationMode } from "@/lib/gateway/operation-mode";
-import { apiRequest, formatCompetitionTime } from "./api";
+import { ApiRequestError, apiRequest, formatCompetitionTime } from "./api";
 import { ContestantApiDocs } from "./ContestantApiDocs";
-import { useOperationMode } from "./OperationModeBanner";
 import { PortalFrame } from "./PortalFrame";
 import { PreviewableRichContent } from "./PreviewableRichContent";
 import { RichTextEditor } from "./RichTextEditor";
@@ -70,11 +68,11 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
   const activeView = contestantViewFromPath(pathname);
   const [questions, setQuestions] = useState<CompetitionQuestion[]>([]);
   const [answers, setAnswers] = useState<ContestantAnswer[]>([]);
-  const [competition, setCompetition] = useState<CompetitionControl>({ state: "not_started", durationMinutes: 90, startedAt: null, endsAt: null, stoppedAt: null });
+  const [competition, setCompetition] = useState<CompetitionControl>({ phase: "competition", state: "not_started", durationMinutes: 90, startedAt: null, endsAt: null, stoppedAt: null });
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [contentHtml, setContentHtml] = useState("");
   const [online, setOnline] = useState(false);
-  const { mode, setMode } = useOperationMode();
+  const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [submitting, setSubmitting] = useState(false);
@@ -91,6 +89,8 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
   const submittingRef = useRef(false);
   const editRevisionRef = useRef(0);
   const savingPromiseRef = useRef<Promise<boolean> | null>(null);
+  const workspaceRequestRef = useRef(0);
+  const generationRef = useRef(0);
 
   const selectedQuestion = questions.find((item) => item.id === selectedId) ?? null;
   const selectedAnswer = answers.find((item) => item.questionId === selectedId) ?? null;
@@ -104,7 +104,7 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
     const pending = pendingDraftRef.current;
     if (!pending) return;
     pendingDraftRef.current = null;
-    writeLocalDraft(draftStorage(), localDraftKey(user.id, pending.questionId), {
+    writeLocalDraft(draftStorage(), localDraftKey(user.id, pending.questionId, generationRef.current), {
       contentHtml: pending.contentHtml,
       savedAt: new Date().toISOString(),
     });
@@ -118,7 +118,7 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
 
   const dropDraftCache = useCallback((questionId: number) => {
     if (pendingDraftRef.current?.questionId === questionId) pendingDraftRef.current = null;
-    clearLocalDraft(draftStorage(), localDraftKey(user.id, questionId));
+    clearLocalDraft(draftStorage(), localDraftKey(user.id, questionId, generationRef.current));
   }, [user.id]);
 
   const showRestorePrompt = useCallback((prompt: DraftRestorePrompt | null) => {
@@ -136,7 +136,7 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
       return;
     }
     const draft = draftRestoreOffer({
-      draft: readLocalDraft(draftStorage(), localDraftKey(user.id, question.id)),
+      draft: readLocalDraft(draftStorage(), localDraftKey(user.id, question.id, generationRef.current)),
       serverContentHtml: answer?.contentHtml ?? "",
       answerStatus: answer?.status ?? "not_started",
       questionStatus: question.status,
@@ -145,7 +145,15 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
   }, [showRestorePrompt, user.id]);
 
   const loadWorkspace = useCallback(async (retainSelection = true) => {
+    const requestId = ++workspaceRequestRef.current;
     const result = await apiRequest<ContestantWorkspace>("/api/competition/contestant/questions");
+    if (requestId !== workspaceRequestRef.current) return result;
+    const generationChanged = generationRef.current !== (result.competition.generation ?? 0);
+    if (generationChanged) {
+      flushDraftCache(); // Retain any unsaved old-round content only under its old key.
+      generationRef.current = result.competition.generation ?? 0;
+      showRestorePrompt(null);
+    }
     const currentId = selectedIdRef.current;
     const nextId = retainSelection && currentId && result.questions.some((question) => question.id === currentId)
       ? currentId
@@ -153,8 +161,10 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
     setQuestions(result.questions);
     setAnswers(result.answers);
     setCompetition(result.competition);
-    if (nextId !== currentId) {
+    setWorkspaceLoaded(true);
+    if (nextId !== currentId || generationChanged) {
       flushDraftCache();
+      setError(null);
       const nextQuestion = result.questions.find((question) => question.id === nextId) ?? null;
       const nextAnswer = result.answers.find((answer) => answer.questionId === nextId) ?? null;
       const nextHtml = nextAnswer?.contentHtml ?? "";
@@ -168,29 +178,13 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
     selectedIdRef.current = nextId;
     setSelectedId(nextId);
     return result;
-  }, [flushDraftCache, offerLocalDraft]);
+  }, [flushDraftCache, offerLocalDraft, showRestorePrompt]);
 
   useEffect(() => {
-    apiRequest<ContestantWorkspace>("/api/competition/contestant/questions")
-      .then((workspace) => {
-        setQuestions(workspace.questions);
-        setAnswers(workspace.answers);
-        setCompetition(workspace.competition);
-        const firstQuestion = workspace.questions[0];
-        const firstAnswer = workspace.answers.find((answer) => answer.questionId === firstQuestion?.id);
-        const initialHtml = firstAnswer?.contentHtml ?? "";
-        selectedIdRef.current = firstQuestion?.id ?? null;
-        setSelectedId(firstQuestion?.id ?? null);
-        setContentHtml(initialHtml);
-        contentRef.current = initialHtml;
-        dirtyRef.current = false;
-        editRevisionRef.current += 1;
-        setSaveState(firstAnswer ? "saved" : "idle");
-        offerLocalDraft(firstQuestion ?? null, firstAnswer ?? null);
-      })
+    void loadWorkspace(false)
       .catch((loadError) => setError(loadError instanceof Error ? loadError.message : "题目读取失败"))
       .finally(() => setLoading(false));
-  }, [offerLocalDraft]);
+  }, [loadWorkspace]);
 
   useEffect(() => {
     if (competition.state !== "running" || !competition.endsAt) return;
@@ -222,16 +216,13 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
       if (stopped) return;
       const stream = new EventSource("/api/competition/events?role=contestant");
       source = stream;
-      stream.addEventListener("connected", (event) => {
+      stream.addEventListener("connected", () => {
         attempt = 0;
         setOnline(true);
-        const data = JSON.parse((event as MessageEvent).data) as { mode?: OperationMode };
-        if (data.mode) setMode(data.mode);
         void loadWorkspace(true);
       });
-      stream.addEventListener("mode", (event) => {
-        const data = JSON.parse((event as MessageEvent).data) as { mode: OperationMode };
-        setMode(data.mode);
+      stream.addEventListener("mode", () => {
+        void loadWorkspace(true);
       });
       stream.addEventListener("question-updated", () => void loadWorkspace(true));
       stream.addEventListener("degraded", () => setOnline(false));
@@ -254,10 +245,11 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
       if (retryTimer !== null) window.clearTimeout(retryTimer);
       source?.close();
     };
-  }, [loadWorkspace, setMode]);
+  }, [loadWorkspace]);
 
   const saveAnswer = useCallback(async (submit: boolean): Promise<boolean> => {
     if (!selectedId) return false;
+    const requestGeneration = generationRef.current;
     if (submit) {
       submittingRef.current = true;
       setSubmitting(true);
@@ -269,6 +261,11 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
       if (!submit && !dirtyRef.current) return previousSucceeded;
     }
 
+    if (requestGeneration !== generationRef.current) {
+      submittingRef.current = false;
+      setSubmitting(false);
+      return false;
+    }
     const questionId = selectedId;
     const requestRevision = editRevisionRef.current;
     const submittedHtml = contentRef.current;
@@ -279,8 +276,9 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
       try {
         const result = await apiRequest<{ answer: ContestantAnswer }>(`/api/competition/contestant/questions/${questionId}/answer`, {
           method: "PUT",
-          body: JSON.stringify({ contentHtml: submittedHtml, submit }),
+          body: JSON.stringify({ contentHtml: submittedHtml, submit, generation: requestGeneration }),
         });
+        if (requestGeneration !== generationRef.current || selectedIdRef.current !== questionId) return true;
         setAnswers((current) => [result.answer, ...current.filter((answer) => answer.questionId !== questionId)]);
         dropDraftCache(questionId);
         if (submit) {
@@ -297,9 +295,18 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
         }
         return true;
       } catch (saveError) {
+        if (requestGeneration !== generationRef.current || selectedIdRef.current !== questionId) return false;
+        if (saveError instanceof ApiRequestError && saveError.code === "competition_generation_changed") {
+          dirtyRef.current = false;
+          setSaveState("idle");
+          setError(saveError.message);
+          await loadWorkspace(false).catch(() => undefined);
+          return false;
+        }
         if (submit) {
           try {
             const workspace = await loadWorkspace(true);
+            if (requestGeneration !== generationRef.current || selectedIdRef.current !== questionId) return false;
             const persisted = workspace.answers.find((answer) => answer.questionId === questionId);
             if (persisted?.status === "submitted") {
               dropDraftCache(questionId);
@@ -432,19 +439,17 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
   }
 
   return (
-    <PortalFrame role="contestant" user={user} online={online} mode={mode} onLogout={() => void logout()} activeView={activeView} onViewChange={(view) => void navigateView(view)}>
-      {activeView === "api-docs" ? <ContestantApiDocs /> : !loading && competition.state !== "running" ? (
+    <PortalFrame role="contestant" user={user} online={online} competition={workspaceLoaded ? competition : null} onLogout={() => void logout()} activeView={activeView} onViewChange={(view) => void navigateView(view)}>
+      {activeView === "api-docs" ? <ContestantApiDocs /> : !loading && !competitionAllowsAnswers(competition) ? (
         <main className="contestant-competition-gate">
-          {competition.state === "ended" ? <CircleStop /> : <TimerReset />}
-          <h1>{competition.state === "ended" ? "比赛已结束" : "比赛未开始"}</h1>
-          <p>{competition.state === "ended"
-            ? "题目已停止开放，已保存和提交的答案会继续保留。"
-            : "评委开始比赛后，题目会自动显示。"}</p>
+          <CircleStop />
+          <h1>比赛已结束</h1>
+          <p>题目已停止开放，已保存和提交的答案会继续保留。</p>
         </main>
       ) : (
       <main className="contestant-workspace">
         <aside className="contestant-questions">
-          <div className="contestant-aside-heading"><span>考核题目</span><strong>{questions.length}</strong></div>
+          <div className="contestant-aside-heading"><span>{competition.phase === "test" ? "测试题目" : "正式赛题"}</span><strong>{questions.length}</strong></div>
           <div className="contestant-question-list">
             {questions.map((question, index) => {
               const answer = answers.find((item) => item.questionId === question.id);
@@ -506,7 +511,7 @@ export default function ContestantApp({ user }: { user: SessionUser }) {
                   </div>
                 )}
                 {locked && <div className="locked-banner"><LockKeyhole />{submitting ? "正在最终提交，请等待服务器确认" : selectedAnswer?.status === "submitted" ? "答案已最终提交，内容已锁定" : "题目已关闭，不能继续修改答案"}</div>}
-                <RichTextEditor value={contentHtml} onChange={changeContent} purpose="answer" editable={!locked} minHeight={350} />
+                <RichTextEditor key={competition.generation ?? 0} value={contentHtml} onChange={changeContent} purpose="answer" editable={!locked} minHeight={350} />
               </section>
             </>
           ) : (

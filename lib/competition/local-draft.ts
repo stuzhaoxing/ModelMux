@@ -9,8 +9,8 @@ export type DraftStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 const draftKeyPrefix = "modelmux.answer-draft";
 
-export function localDraftKey(contestantId: number, questionId: number): string {
-  return `${draftKeyPrefix}.${contestantId}.${questionId}`;
+export function localDraftKey(contestantId: number, questionId: number, generation = 0): string {
+  return `${draftKeyPrefix}.${contestantId}.${questionId}${generation === 0 ? "" : `.round-${generation}`}`;
 }
 
 /**

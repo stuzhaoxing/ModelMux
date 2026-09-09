@@ -1,17 +1,12 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { z } from "zod";
 
 import { requireAdmin } from "@/lib/admin/auth";
+import { updateCompetitionUserSchema } from "@/lib/competition/accounts";
 import { competitionError, parseJson, requireSameOrigin } from "@/lib/competition/http";
 import { deleteUser, updateUser } from "@/lib/competition/repository";
 
 export const runtime = "nodejs";
-
-const updateSchema = z.object({
-  displayName: z.string().trim().min(1).max(100).optional(),
-  active: z.boolean().optional(),
-});
 
 export async function PATCH(
   request: NextRequest,
@@ -25,7 +20,7 @@ export async function PATCH(
   const userId = Number(id);
   if (!Number.isSafeInteger(userId) || userId < 1) return NextResponse.json({ error: "账号不存在" }, { status: 404 });
   try {
-    const changed = await updateUser({ id: userId, ...(await parseJson(request, updateSchema)) });
+    const changed = await updateUser({ id: userId, ...(await parseJson(request, updateCompetitionUserSchema)) });
     return changed ? NextResponse.json({ ok: true }) : NextResponse.json({ error: "账号不存在或没有变更" }, { status: 404 });
   } catch (error) {
     return competitionError(error);

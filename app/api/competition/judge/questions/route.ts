@@ -13,6 +13,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const questionSchema = z.object({
+  phase: z.enum(["test", "competition"]).default("competition"),
   title: z.string().trim().min(1).max(200),
   contentHtml: z.string().max(2_000_000),
 });
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
     const contentHtml = cleanRichText(input.contentHtml);
     if (!richTextHasContent(contentHtml)) return NextResponse.json({ error: "题目内容不能为空" }, { status: 400 });
-    const id = await createQuestion({ authorId: user.id, title: input.title, contentHtml });
+    const id = await createQuestion({ authorId: user.id, title: input.title, contentHtml, phase: input.phase });
     await recordActivity({
       category: "question",
       action: "question-created",

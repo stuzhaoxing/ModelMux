@@ -1,60 +1,43 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+const mocks = vi.hoisted(() => ({ getCompetitionControl: vi.fn(), readStateFile: vi.fn() }));
+vi.mock("@/lib/competition/repository", () => ({ getCompetitionControl: mocks.getCompetitionControl }));
+vi.mock("./state-file", () => ({ readStateFile: mocks.readStateFile }));
 
-import {
-  operationModeState,
-  setOperationMode,
-} from "./operation-mode";
+import { operationModeState } from "./operation-mode";
 
-describe.sequential("gateway operation mode", () => {
-  let directory: string;
-
-  beforeEach(async () => {
-    directory = await mkdtemp(path.join(tmpdir(), "modelmux-operation-mode-"));
-    process.env.MODELMUX_DATA_DIR = directory;
+describe("competition-driven operation mode", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv("MODELMUX_DATABASE_URL", "mysql://test");
   });
+  afterEach(() => vi.unstubAllEnvs());
 
-  afterEach(async () => {
-    delete process.env.MODELMUX_DATA_DIR;
-    await rm(directory, { force: true, recursive: true });
-  });
-
-  it("defaults to test mode", async () => {
+  it("defaults to test without a competition database, ignoring legacy mode files", async () => {
+    vi.stubEnv("MODELMUX_DATABASE_URL", "");
+    mocks.readStateFile.mockResolvedValue({ status: "ok", value: { mode: "competition" } });
     await expect(operationModeState()).resolves.toEqual({
-      mode: "test",
-      updatedAt: null,
-      stateFileValid: true,
+      mode: "test", updatedAt: null, stateFileValid: true,
+    });
+    expect(mocks.getCompetitionControl).not.toHaveBeenCalled();
+    expect(mocks.readStateFile).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["competition", "not_started", null, "test"],
+    ["test", "running", "2026-09-09T01:00:00.000Z", "test"],
+    ["test", "ended", "2026-09-09T01:00:00.000Z", "test"],
+    ["competition", "running", "2026-09-09T01:00:00.000Z", "competition"],
+    ["competition", "ended", "2026-09-09T01:00:00.000Z", "competition"],
+  ])("derives %s / %s from the persisted start", async (phase, state, startedAt, mode) => {
+    mocks.getCompetitionControl.mockResolvedValue({ phase, state, startedAt });
+    await expect(operationModeState()).resolves.toEqual({
+      mode, updatedAt: startedAt, stateFileValid: true,
     });
   });
 
-  it("persists competition mode across subsequent reads", async () => {
-    const changedAt = new Date("2026-08-19T01:00:00.000Z");
-
-    await expect(setOperationMode("competition", changedAt)).resolves.toEqual({
-      mode: "competition",
-      updatedAt: changedAt.toISOString(),
-      stateFileValid: true,
-    });
-    await expect(operationModeState()).resolves.toEqual({
-      mode: "competition",
-      updatedAt: changedAt.toISOString(),
-      stateFileValid: true,
-    });
-  });
-
-  it("falls back to test mode when the persisted mode cannot be trusted", async () => {
-    await writeFile(
-      path.join(directory, "gateway-operation-mode.json"),
-      '{"mode":"unlimited"}\n',
-    );
-
-    await expect(operationModeState()).resolves.toEqual({
-      mode: "test",
-      updatedAt: null,
-      stateFileValid: false,
-    });
+  it("does not invent a mode when the database is unavailable", async () => {
+    mocks.getCompetitionControl.mockRejectedValue(new Error("database offline"));
+    await expect(operationModeState()).rejects.toThrow("database offline");
   });
 });

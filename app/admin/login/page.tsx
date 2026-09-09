@@ -8,6 +8,6 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminLoginPage() {
   const token = (await cookies()).get(adminSessionCookieName)?.value;
-  if (verifyAdminSessionToken(token)) redirect("/admin");
+  if (verifyAdminSessionToken(token)) redirect("/admin/competition");
   return <AdminLogin />;
 }

@@ -12,6 +12,7 @@ function makeQuestion(
   progress: JudgeQuestion["progress"],
 ): JudgeQuestion {
   return {
+    phase: "competition",
     id,
     title: `题目 ${id}`,
     contentHtml: "<p>内容</p>",
@@ -51,6 +52,7 @@ describe("judge dashboard summary", () => {
     ]);
 
     expect(summary.answers.submissionRate).toBe(0);
+    expect(summary.answers.questionCount).toBe(0);
   });
 
   it("formats live countdown values", () => {

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  赛中 Mac mini 的 LaunchAgent（用户级），装到 ~/Library/LaunchAgents/。
+
+  为什么是 LaunchAgent 而不是 LaunchDaemon：
+  项目跑在可移动卷 /Volumes/... 上。系统级 LaunchDaemon 在登录前启动，
+  那时外置卷通常还没挂载，且 macOS 的可移动介质访问授权是按用户授予的，
+  Daemon 会因为读不到目录反复失败。Agent 跟着用户登录会话启动，两个问题都不存在。
+  代价是必须保持该用户登录（比赛机建议开启自动登录）。
+
+  安装（不需要 sudo）：
+    cp deploy/com.modelmux.gateway.agent.plist.example \
+       ~/Library/LaunchAgents/com.modelmux.gateway.plist
+    # 按实际路径替换 __PROJECT_DIR__ 后再 load
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.modelmux.gateway.plist
+
+  常用操作：
+    launchctl print gui/$(id -u)/com.modelmux.gateway     # 状态
+    launchctl kickstart -k gui/$(id -u)/com.modelmux.gateway  # 重启
+    launchctl bootout gui/$(id -u)/com.modelmux.gateway   # 停止并卸载
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.modelmux.gateway</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__PROJECT_DIR__/scripts/start-competition.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__PROJECT_DIR__</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- 崩溃、被 kill、乃至正常退出都会被拉起；外置卷或 MySQL 还没就绪时
+       脚本预检会失败退出，配合 ThrottleInterval 每 10 秒重试直到条件满足。 -->
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <!-- 不要用 Background：那会降低 CPU 与 I/O 优先级，比赛并发下会明显拖慢响应。 -->
+  <key>ProcessType</key>
+  <string>Interactive</string>
+
+  <key>StandardOutPath</key>
+  <string>__PROJECT_DIR__/logs/gateway.log</string>
+  <key>StandardErrorPath</key>
+  <string>__PROJECT_DIR__/logs/gateway-error.log</string>
+</dict>
+</plist>

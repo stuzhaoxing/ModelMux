@@ -63,26 +63,66 @@ describe("competition question set publishing", () => {
     expect(String(mocks.connection.execute.mock.calls[0][0])).toContain("FOR UPDATE");
     expect(String(mocks.connection.execute.mock.calls[2][0])).toContain("status = 'published'");
     expect(String(mocks.connection.execute.mock.calls[3][0])).toContain("status = 'running'");
-    expect(mocks.connection.execute.mock.calls[3][1]).toEqual([60, 60]);
+    expect(mocks.connection.execute.mock.calls[3][1]).toEqual(["competition", 60, 60]);
     expect(mocks.insertCompetitionEvent).toHaveBeenCalledTimes(2);
     expect(mocks.insertCompetitionEvent).toHaveBeenNthCalledWith(1, mocks.connection, { type: "question-updated", questionId: 1 });
     expect(mocks.insertCompetitionEvent).toHaveBeenNthCalledWith(2, mocks.connection, { type: "question-updated", questionId: 2 });
   });
 
-  it("restarts a stopped competition without deleting existing answers", async () => {
-    mocks.connection.execute
-      .mockResolvedValueOnce([[{ status: "ended", duration_minutes: 60, started_at: "2026-08-25 16:00:00.000", ends_at: "2026-08-25 16:20:00.000", stopped_at: "2026-08-25 16:20:00.000", active: 0 }]])
-      .mockResolvedValueOnce([[
-        { id: 1, title: "第一题", status: "published" },
-        { id: 2, title: "第二题", status: "closed" },
-      ]])
-      .mockResolvedValueOnce([{ affectedRows: 2 }])
-      .mockResolvedValueOnce([{ affectedRows: 1 }])
-      .mockResolvedValueOnce([[{ status: "running", duration_minutes: 30, started_at: "2020-08-25 16:30:00.000", ends_at: "2030-08-25 17:00:00.000", stopped_at: null, active: 1 }]]);
+  it.each(["ended", "running"])("requires reset after a %s competition has ended, including timer expiry", async (status) => {
+    mocks.connection.execute.mockResolvedValueOnce([[{
+      phase: "competition", status, duration_minutes: 60,
+      started_at: "2026-08-25 16:00:00.000", ends_at: "2026-08-25 16:20:00.000",
+      stopped_at: status === "ended" ? "2026-08-25 16:20:00.000" : null, active: 0,
+    }]]);
+    await expect(startCompetition(30)).rejects.toThrow("competition_reset_required");
+    expect(mocks.connection.execute).toHaveBeenCalledOnce();
+    expect(mocks.connection.rollback).toHaveBeenCalledOnce();
+    expect(mocks.connection.commit).not.toHaveBeenCalled();
+    expect(mocks.insertCompetitionEvent).not.toHaveBeenCalled();
+  });
 
-    await expect(startCompetition(30)).resolves.toMatchObject({ questionCount: 2, competition: { state: "running" } });
+  it("switches from running test questions to formal questions atomically and resets the timer", async () => {
+    mocks.connection.execute
+      .mockResolvedValueOnce([[{ phase: "test", active: 1 }]])
+      .mockResolvedValueOnce([[{ id: 2, title: "正式赛题", status: "draft" }]])
+      .mockResolvedValueOnce([{ affectedRows: 1 }])
+      .mockResolvedValueOnce([{ affectedRows: 1 }])
+      .mockResolvedValueOnce([[{ phase: "competition", status: "running", active: 1, duration_minutes: 90, started_at: "2026-09-09 10:00:00.000", ends_at: "2026-09-09 11:30:00.000", stopped_at: null }]]);
+    await expect(startCompetition(90)).resolves.toMatchObject({ questionCount: 1, competition: { phase: "competition" } });
+    expect(mocks.connection.execute.mock.calls[1][0]).toContain("WHERE phase = ?");
+    expect(mocks.connection.execute.mock.calls[1][1]).toEqual(["competition"]);
+    expect(mocks.connection.execute.mock.calls[2][1]).toEqual(["competition"]);
+    expect(mocks.connection.execute.mock.calls[3][1]).toEqual(["competition", 90, 90]);
+    expect(mocks.connection.execute.mock.calls.some(([sql]) => String(sql).includes("competition_answers"))).toBe(false);
     expect(mocks.connection.commit).toHaveBeenCalledOnce();
-    expect(mocks.insertCompetitionEvent).toHaveBeenCalledTimes(2);
+    expect(mocks.insertCompetitionEvent).toHaveBeenCalledWith(mocks.connection, { type: "question-updated", questionId: 2 });
+  });
+
+  it("keeps the test running if no formal questions have been recorded", async () => {
+    mocks.connection.execute
+      .mockResolvedValueOnce([[{ phase: "test", active: 1 }]])
+      .mockResolvedValueOnce([[]]);
+    await expect(startCompetition(90)).rejects.toThrow("question_set_empty");
+    expect(mocks.connection.rollback).toHaveBeenCalledOnce();
+    expect(mocks.connection.execute).toHaveBeenCalledTimes(2);
+    expect(mocks.insertCompetitionEvent).not.toHaveBeenCalled();
+  });
+
+  it("refuses to restart a running formal competition", async () => {
+    mocks.connection.execute.mockResolvedValueOnce([[{ phase: "competition", active: 1 }]]);
+    await expect(startCompetition(30)).rejects.toThrow("competition_already_running");
+    expect(mocks.connection.execute).toHaveBeenCalledOnce();
+    expect(mocks.connection.rollback).toHaveBeenCalledOnce();
+  });
+
+  it.each([["test", "competition"], ["competition", "test"]] as const)("blocks %s answers during %s", async (questionPhase, activePhase) => {
+    mocks.connection.execute
+      .mockResolvedValueOnce([[{ phase: activePhase, active: 1 }]])
+      .mockResolvedValueOnce([[{ phase: questionPhase, title: "另一阶段题目", status: "published" }]]);
+    await expect(saveAnswer({ questionId: 1, contestantId: 7, contentHtml: "<p>过期保存</p>", submit: false })).rejects.toThrow("question_phase_changed");
+    expect(mocks.connection.execute).toHaveBeenCalledTimes(2);
+    expect(mocks.connection.rollback).toHaveBeenCalledOnce();
   });
 
   it("allows appending a new question after the competition has stopped", async () => {
@@ -127,6 +167,7 @@ describe("competition question set publishing", () => {
       "管理员出题",
       "<p>内容</p>",
       null,
+      "competition",
     ]);
     expect(mocks.insertCompetitionEvent).toHaveBeenCalledWith(
       mocks.connection,
@@ -260,7 +301,41 @@ describe("competition question set publishing", () => {
     expect(mocks.insertCompetitionEvent).not.toHaveBeenCalled();
   });
 
-  it("rejects answer writes before start or after stop", async () => {
+  it.each([false, true])("allows unlimited test answer writes before start (submit=%s)", async (submit) => {
+    mocks.connection.execute
+      .mockResolvedValueOnce([[{ phase: "competition", status: "not_started", started_at: null, active: 0 }]])
+      .mockResolvedValueOnce([[{ phase: "test", title: "测试题", status: "draft" }]])
+      .mockResolvedValueOnce([[]])
+      .mockResolvedValueOnce([{ affectedRows: 1 }])
+      .mockResolvedValueOnce([[{ id: 9, question_id: 1, content_html: "<p>测试答案</p>", status: submit ? "submitted" : "draft" }]]);
+    await expect(saveAnswer({ questionId: 1, contestantId: 7, contentHtml: "<p>测试答案</p>", submit }))
+      .resolves.toMatchObject({ answer: { status: submit ? "submitted" : "draft" } });
+    expect(mocks.connection.commit).toHaveBeenCalledOnce();
+  });
+
+  it("rejects formal answers before the formal competition starts", async () => {
+    mocks.connection.execute
+      .mockResolvedValueOnce([[{ phase: "competition", status: "not_started", started_at: null, active: 0 }]])
+      .mockResolvedValueOnce([[{ phase: "competition", title: "正式赛题", status: "published" }]]);
+    await expect(saveAnswer({ questionId: 1, contestantId: 7, contentHtml: "<p>答案</p>", submit: false }))
+      .rejects.toThrow("question_phase_changed");
+    expect(mocks.connection.execute).toHaveBeenCalledTimes(2);
+    expect(mocks.connection.rollback).toHaveBeenCalledOnce();
+  });
+
+  it("allows test answer writes after a legacy timed test has ended", async () => {
+    mocks.connection.execute
+      .mockResolvedValueOnce([[{ phase: "test", status: "ended", started_at: "2020-01-01 00:00:00", active: 0 }]])
+      .mockResolvedValueOnce([[{ phase: "test", title: "测试题", status: "closed" }]])
+      .mockResolvedValueOnce([[]])
+      .mockResolvedValueOnce([{ affectedRows: 1 }])
+      .mockResolvedValueOnce([[{ id: 9, question_id: 1, content_html: "<p>测试答案</p>", status: "draft" }]]);
+    await expect(saveAnswer({ questionId: 1, contestantId: 7, contentHtml: "<p>测试答案</p>", submit: false }))
+      .resolves.toMatchObject({ answer: { status: "draft" } });
+    expect(mocks.connection.commit).toHaveBeenCalledOnce();
+  });
+
+  it("rejects answer writes after the formal competition stops", async () => {
     mocks.connection.execute.mockResolvedValueOnce([[
       { status: "ended", duration_minutes: 60, started_at: "2026-08-25 16:00:00.000", ends_at: "2026-08-25 16:20:00.000", stopped_at: "2026-08-25 16:20:00.000", active: 0 },
     ]]);

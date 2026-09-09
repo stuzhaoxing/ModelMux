@@ -16,3 +16,9 @@ export const createCompetitionUserRequestSchema = z.union([
   createCompetitionUserSchema,
   autoCreateCompetitionUserSchema,
 ]);
+
+export const updateCompetitionUserSchema = createCompetitionUserSchema
+  .pick({ username: true, displayName: true, password: true })
+  .partial()
+  .extend({ active: z.boolean().optional() })
+  .refine((input) => Object.values(input).some((value) => value !== undefined));

@@ -24,6 +24,7 @@ vi.mock("@/lib/competition/activity", () => ({
   recordActivity: mocks.recordActivity,
 }));
 
+
 import { POST } from "./route";
 
 describe("competition start duration", () => {
@@ -61,7 +62,7 @@ describe("competition start duration", () => {
     expect(response.status).toBe(200);
     expect(mocks.startCompetition).toHaveBeenCalledWith(144000);
     expect(mocks.recordActivity).toHaveBeenCalledWith(expect.objectContaining({
-      detail: "开始比赛，开放 1 道题目，限时 144000 分钟",
+      detail: "开始正式比赛，开放 1 道题目，限时 144000 分钟",
     }));
   });
 
@@ -76,6 +77,33 @@ describe("competition start duration", () => {
       ));
       expect(response.status).toBe(400);
     }
+    expect(mocks.startCompetition).not.toHaveBeenCalled();
+  });
+
+  it("returns an actionable conflict when an ended competition has not been reset", async () => {
+    mocks.startCompetition.mockRejectedValueOnce(new Error("competition_reset_required"));
+    const response = await POST(new NextRequest("http://localhost/api/competition/judge/competition/start", {
+      method: "POST", body: JSON.stringify({ durationMinutes: 90 }),
+    }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "比赛已结束，请先归档并重置回到测试状态，再开始下一场比赛" });
+    expect(mocks.listJudgeQuestions).not.toHaveBeenCalled();
+    expect(mocks.recordActivity).not.toHaveBeenCalled();
+  });
+
+  it("rejects the removed timed test start", async () => {
+    const response = await POST(new NextRequest("http://localhost/api/competition/judge/competition/start", {
+      method: "POST", body: JSON.stringify({ durationMinutes: 20, phase: "test" }),
+    }));
+    expect(response.status).toBe(400);
+    expect(mocks.startCompetition).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unknown phase before starting", async () => {
+    const response = await POST(new NextRequest("http://localhost/api/competition/judge/competition/start", {
+      method: "POST", body: JSON.stringify({ durationMinutes: 20, phase: "preview" }),
+    }));
+    expect(response.status).toBe(400);
     expect(mocks.startCompetition).not.toHaveBeenCalled();
   });
 });

@@ -7,7 +7,7 @@
 
 目标 Mac mini 同时连接两个相互隔离的网络：
 
-1. Mac mini 能访问互联网中的模型供应商 API，例如硅基流动。
+1. Mac mini 能访问互联网中的模型供应商 API，例如 DeepSeek 官方和阿里云百炼。
 2. 局域网电脑能访问 Mac mini 上的江苏省监测技能竞赛在线答题系统。
 3. 局域网电脑不能访问互联网。
 4. 局域网电脑不能直接获得模型供应商的 API Key。
@@ -147,7 +147,7 @@ http://10.20.0.1:4000/v1
 
 正式环境再增加 HTTPS。管理后台可以只监听 `127.0.0.1` 或仅通过 Tailscale 管理，避免普通局域网客户端获得管理权限。
 
-Mac mini 上发往硅基流动等供应商的请求会使用 Wi-Fi 默认路由。江苏省监测技能竞赛在线答题系统必须配置请求超时、内部 API Key、限流和日志脱敏。
+Mac mini 上发往 DeepSeek、阿里云百炼等供应商的请求会使用 Wi-Fi 默认路由。江苏省监测技能竞赛在线答题系统必须配置请求超时、内部 API Key、限流和日志脱敏。
 
 ## 7. 两种替代方案
 
@@ -198,7 +198,7 @@ Tailscale 中已经识别到目标候选设备：
 ```bash
 route -n get default
 ping -c 3 192.168.1.1
-curl -I https://api.siliconflow.cn
+curl -I https://api.deepseek.com
 ping -c 3 10.20.0.10
 ```
 

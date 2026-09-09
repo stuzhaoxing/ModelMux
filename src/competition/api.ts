@@ -1,8 +1,12 @@
+export class ApiRequestError extends Error {
+  constructor(message: string, public code?: string) { super(message); }
+}
+
 export async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
   const response = await fetch(url, { ...init, headers, cache: "no-store" });
-  const payload = await response.json().catch(() => ({})) as { error?: string } & T;
+  const payload = await response.json().catch(() => ({})) as { error?: string; code?: string } & T;
   if (
     response.status === 401 &&
     url.startsWith("/api/admin/") &&
@@ -25,7 +29,7 @@ export async function apiRequest<T>(url: string, init?: RequestInit): Promise<T>
     const next = `${window.location.pathname}${window.location.search}`;
     window.location.replace(`/login?next=${encodeURIComponent(next)}`);
   }
-  if (!response.ok) throw new Error(payload.error || `请求失败（HTTP ${response.status}）`);
+  if (!response.ok) throw new ApiRequestError(payload.error || `请求失败（HTTP ${response.status}）`, payload.code);
   return payload;
 }
 

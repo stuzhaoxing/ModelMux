@@ -11,6 +11,7 @@ import type { JudgeAnswerExportSnapshot } from "./repository";
 import type { JudgeAnswerRow } from "./types";
 
 const question = {
+  phase: "competition" as const,
   id: 11,
   title: "河流断面分析 / 2026",
   contentHtml: `<h2>任务要求</h2><p>请结合 <strong>监测数据</strong> 给出结论。</p><ul><li>说明异常点</li><li>给出建议</li></ul><p><a class="rich-attachment" data-attachment-id="42" data-attachment-name="原始数据.pdf" data-attachment-size="73400320" data-attachment-type="application/pdf" href="/api/competition/media/42">附件</a></p>`,

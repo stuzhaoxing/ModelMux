@@ -20,6 +20,7 @@ import type {
   JudgeAnswerRow,
   JudgeQuestion,
   QuestionStatus,
+  QuestionPhase,
 } from "./types";
 
 interface UserRow extends RowDataPacket {
@@ -35,6 +36,7 @@ interface UserRow extends RowDataPacket {
 }
 
 interface QuestionRow extends RowDataPacket {
+  phase: QuestionPhase;
   id: number;
   title: string;
   content_html: string;
@@ -60,6 +62,8 @@ interface LockedQuestionRow extends RowDataPacket {
 }
 
 interface CompetitionControlRow extends RowDataPacket {
+  generation: number;
+  phase: QuestionPhase;
   status: "not_started" | "running" | "ended";
   duration_minutes: number | string;
   started_at: string | null;
@@ -126,19 +130,20 @@ interface UserAttachmentRow extends RowDataPacket {
 
 type JudgeExportAnswerRecord = JudgeAnswerRecord;
 
-const competitionControlSelect = `SELECT status, duration_minutes, started_at, ends_at, stopped_at,
-  (status = 'running' AND started_at <= CURRENT_TIMESTAMP(3) AND ends_at > CURRENT_TIMESTAMP(3)) AS active
+const competitionControlSelect = `SELECT generation, phase, status, duration_minutes, started_at, ends_at, stopped_at,
+  (phase = 'competition' AND status = 'running' AND started_at <= CURRENT_TIMESTAMP(3) AND ends_at > CURRENT_TIMESTAMP(3)) AS active
   FROM competition_control WHERE id = 1`;
 
 function toCompetitionControl(row: CompetitionControlRow, now = Date.now()): CompetitionControl {
   const control = competitionControlFromStored({
+    phase: row.phase,
     status: row.status,
     durationMinutes: row.duration_minutes,
     startedAt: row.started_at,
     endsAt: row.ends_at,
     stoppedAt: row.stopped_at,
   }, now);
-  return Boolean(Number(row.active)) ? { ...control, state: "running" } : control;
+  return { ...control, generation: Number(row.generation ?? 0), ...(row.phase !== "test" && Boolean(Number(row.active)) ? { state: "running" as const } : {}) };
 }
 
 async function lockCompetitionControl(connection: PoolConnection): Promise<CompetitionControlRow> {
@@ -146,7 +151,7 @@ async function lockCompetitionControl(connection: PoolConnection): Promise<Compe
     `${competitionControlSelect} FOR UPDATE`,
   );
   if (!controls[0]) throw new Error("competition_control_missing");
-  return controls[0];
+  return controls[0].phase === "test" ? { ...controls[0], active: 0 } : controls[0];
 }
 
 export async function getCompetitionControl(now = Date.now()): Promise<CompetitionControl> {
@@ -204,17 +209,19 @@ function toUser(row: UserRow): CompetitionUser {
   };
 }
 
+// Test questions become available as soon as they are saved, including legacy drafts.
 function toQuestion(row: QuestionRow): CompetitionQuestion {
   return {
+    phase: row.phase ?? "competition",
     id: Number(row.id),
     title: row.title,
     contentHtml: row.content_html,
-    status: row.status,
+    status: row.phase === "test" ? "published" : row.status,
     version: Number(row.version),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    publishedAt: row.published_at,
-    closedAt: row.closed_at,
+    publishedAt: row.phase === "test" ? row.published_at ?? row.created_at : row.published_at,
+    closedAt: row.phase === "test" ? null : row.closed_at,
     authorName: row.author_name,
   };
 }
@@ -433,9 +440,10 @@ export interface CompetitionTokenUsage {
 
 export async function recordCompetitionTokenUsage(
   usage: CompetitionTokenUsage,
+  generation?: number,
 ): Promise<void> {
   await ensureCompetitionSchema();
-  await competitionPool().execute(
+  const write = (executor: Pick<ReturnType<typeof competitionPool>, "execute">) => executor.execute(
     `INSERT INTO competition_token_minutes
        (minute_at, input_tokens, output_tokens, total_tokens)
      VALUES (DATE_FORMAT(CURRENT_TIMESTAMP(3), '%Y-%m-%d %H:%i:00'), ?, ?, ?)
@@ -452,16 +460,34 @@ export async function recordCompetitionTokenUsage(
       usage.totalTokens,
     ],
   );
+  if (generation === undefined) {
+    await write(competitionPool());
+  } else {
+    await withCompetitionTransaction(await competitionPool().getConnection(), async (transaction) => {
+      const control = await lockCompetitionControl(transaction);
+      if (Number(control.generation ?? 0) === generation) await write(transaction);
+    });
+  }
 }
 
 export async function updateUser(input: {
   id: number;
+  username?: string;
+  password?: string;
   displayName?: string;
   active?: boolean;
 }): Promise<boolean> {
   await ensureCompetitionSchema();
   const assignments: string[] = [];
   const values: SqlValue[] = [];
+  if (input.username !== undefined) {
+    assignments.push("username = ?");
+    values.push(input.username.trim().toLowerCase());
+  }
+  if (input.password !== undefined) {
+    assignments.push("password_hash = ?", "event_password = ?");
+    values.push(await hashPassword(input.password), input.password);
+  }
   if (input.displayName !== undefined) {
     assignments.push("display_name = ?");
     values.push(input.displayName.trim());
@@ -472,24 +498,27 @@ export async function updateUser(input: {
   }
   if (assignments.length === 0) return false;
   values.push(input.id);
-  const [result] = await competitionPool().execute<ResultSetHeader>(
-    `UPDATE competition_users SET ${assignments.join(", ")} WHERE id = ? AND role = 'contestant'`,
-    values,
-  );
-  if (input.active === false && result.affectedRows > 0) {
-    await competitionPool().execute(
-      "UPDATE competition_sessions SET revoked_at = CURRENT_TIMESTAMP(3) WHERE user_id = ? AND revoked_at IS NULL",
-      [input.id],
+  const connection = await competitionPool().getConnection();
+  return withCompetitionTransaction(connection, async (transaction) => {
+    const [result] = await transaction.execute<ResultSetHeader>(
+      `UPDATE competition_users SET ${assignments.join(", ")} WHERE id = ? AND role = 'contestant' AND deleted_at IS NULL`,
+      values,
     );
-  }
-  return result.affectedRows > 0;
+    if (result.affectedRows > 0 && (input.active === false || input.username !== undefined || input.password !== undefined)) {
+      await transaction.execute(
+        "UPDATE competition_sessions SET revoked_at = CURRENT_TIMESTAMP(3) WHERE user_id = ? AND revoked_at IS NULL",
+        [input.id],
+      );
+    }
+    return result.affectedRows > 0;
+  });
 }
 
 export async function deleteUser(id: number): Promise<boolean> {
   return hardDeleteContestantRecord({ id });
 }
 
-const questionSelect = `SELECT q.id, q.title, q.content_html, q.status, q.version,
+const questionSelect = `SELECT q.id, q.phase, q.title, q.content_html, q.status, q.version,
   q.created_at, q.updated_at, q.published_at, q.closed_at,
   COALESCE(u.display_name, '管理员') AS author_name
   FROM competition_questions q
@@ -503,7 +532,7 @@ const answerCountFor = (status: "submitted" | "draft") =>
     WHERE a.question_id = q.id AND a.status = '${status}'
       AND a.contestant_id IN (${activeContestantIds}))`;
 
-const judgeQuestionSelect = `SELECT q.id, q.title, q.content_html, q.status, q.version,
+const judgeQuestionSelect = `SELECT q.id, q.phase, q.title, q.content_html, q.status, q.version,
   q.created_at, q.updated_at, q.published_at, q.closed_at,
   COALESCE(u.display_name, '管理员') AS author_name,
   (SELECT COUNT(*) FROM (${activeContestantIds}) roster) AS contestant_total,
@@ -532,10 +561,12 @@ export async function listJudgeQuestions(): Promise<JudgeQuestion[]> {
   });
 }
 
-export async function listContestantQuestions(): Promise<CompetitionQuestion[]> {
+export async function listContestantQuestions(phase: QuestionPhase): Promise<CompetitionQuestion[]> {
   const result = await rows<QuestionRow[]>(
-    `${questionSelect} WHERE q.status IN ('published', 'closed')
+    `${questionSelect} WHERE (q.phase = 'test' OR q.status IN ('published', 'closed'))
+     AND q.phase = ?
      ORDER BY q.published_at DESC, q.id DESC`,
+    [phase],
   );
   return result.map(toQuestion);
 }
@@ -546,6 +577,7 @@ export async function getQuestion(id: number): Promise<CompetitionQuestion | nul
 }
 
 export async function createQuestion(input: {
+  phase?: QuestionPhase;
   authorId: number | null;
   title: string;
   contentHtml: string;
@@ -557,9 +589,9 @@ export async function createQuestion(input: {
     if (Boolean(Number(control.active))) throw new Error("competition_running");
     const [result] = await transaction.execute<ResultSetHeader>(
       `INSERT INTO competition_questions
-         (title, content_html, status, created_by, published_at)
-       VALUES (?, ?, 'draft', ?, NULL)`,
-      [input.title, input.contentHtml, input.authorId],
+         (title, content_html, status, created_by, published_at, phase)
+       VALUES (?, ?, 'draft', ?, NULL, ?)`,
+      [input.title, input.contentHtml, input.authorId, input.phase ?? "competition"],
     );
     const id = Number(result.insertId);
     await insertCompetitionEvent(transaction, { type: "question-updated", questionId: id });
@@ -627,29 +659,38 @@ export async function startCompetition(durationMinutes: number): Promise<{
   competition: CompetitionControl;
   questionCount: number;
 }> {
+  const phase = "competition";
   await ensureCompetitionSchema();
   const connection = await competitionPool().getConnection();
   return withCompetitionTransaction(connection, async (transaction) => {
-    await lockCompetitionControl(transaction);
+    const control = await lockCompetitionControl(transaction);
+    if (Boolean(Number(control.active))) {
+      throw new Error("competition_already_running");
+    }
+    if (control.phase !== "test" && (control.started_at || control.status === "ended")) {
+      throw new Error("competition_reset_required");
+    }
     const [questionSet] = await transaction.execute<LockedQuestionRow[]>(
-      "SELECT id, title, status FROM competition_questions ORDER BY id FOR UPDATE",
+      "SELECT id, title, status FROM competition_questions WHERE phase = ? ORDER BY id FOR UPDATE",
+      [phase],
     );
     if (questionSet.length === 0) throw new Error("question_set_empty");
     const [result] = await transaction.execute<ResultSetHeader>(
       `UPDATE competition_questions
        SET status = 'published', published_at = COALESCE(published_at, CURRENT_TIMESTAMP(3)),
            closed_at = NULL, version = version + 1
-       WHERE status IN ('draft', 'published', 'closed')`,
+       WHERE phase = ? AND status IN ('draft', 'published', 'closed')`,
+      [phase],
     );
     if (result.affectedRows !== questionSet.length) throw new Error("question_set_conflict");
     await transaction.execute(
       `UPDATE competition_control
-       SET status = 'running', duration_minutes = ?,
+       SET status = 'running', phase = ?, duration_minutes = ?,
            started_at = CURRENT_TIMESTAMP(3),
            ends_at = TIMESTAMPADD(MINUTE, ?, CURRENT_TIMESTAMP(3)),
            stopped_at = NULL
        WHERE id = 1`,
-      [durationMinutes, durationMinutes],
+      [phase, durationMinutes, durationMinutes],
     );
     for (const question of questionSet) {
       await insertCompetitionEvent(transaction, { type: "question-updated", questionId: Number(question.id) });
@@ -673,7 +714,8 @@ export async function stopCompetition(): Promise<{
     const control = await lockCompetitionControl(transaction);
     if (!Boolean(Number(control.active))) throw new Error("competition_not_running");
     const [questionSet] = await transaction.execute<LockedQuestionRow[]>(
-      "SELECT id, title, status FROM competition_questions ORDER BY id FOR UPDATE",
+      "SELECT id, title, status FROM competition_questions WHERE phase = ? ORDER BY id FOR UPDATE",
+      [control.phase ?? "competition"],
     );
     await transaction.execute(
       `UPDATE competition_control
@@ -693,11 +735,13 @@ export async function stopCompetition(): Promise<{
   });
 }
 
-export async function listAnswersForContestant(contestantId: number): Promise<ContestantAnswer[]> {
+export async function listAnswersForContestant(contestantId: number, phase: QuestionPhase): Promise<ContestantAnswer[]> {
   const result = await rows<AnswerRow[]>(
     `SELECT id, question_id, content_html, status, first_saved_at, updated_at, submitted_at
-     FROM competition_answers WHERE contestant_id = ? ORDER BY question_id DESC`,
-    [contestantId],
+     FROM competition_answers WHERE contestant_id = ?
+       AND question_id IN (SELECT id FROM competition_questions WHERE phase = ?)
+     ORDER BY question_id DESC`,
+    [contestantId, phase],
   );
   return result.map(toAnswer);
 }
@@ -729,9 +773,9 @@ export async function listAnswersForJudge(questionId: number): Promise<JudgeAnsw
   }));
 }
 
-export async function getJudgeAnswerExportSnapshot(): Promise<JudgeAnswerExportSnapshot> {
+export async function getJudgeAnswerExportSnapshot(phase: QuestionPhase = "competition"): Promise<JudgeAnswerExportSnapshot> {
   const [questionRows, contestantRows, answerRows] = await Promise.all([
-    rows<QuestionRow[]>(`${questionSelect} WHERE q.status IN ('published', 'closed') ORDER BY q.published_at DESC, q.id DESC`),
+    rows<QuestionRow[]>(`${questionSelect} WHERE q.phase = ? AND (q.phase = 'test' OR q.status IN ('published', 'closed')) ORDER BY q.published_at DESC, q.id DESC`, [phase]),
     rows<JudgeExportContestantRow[]>(
       `SELECT id AS contestant_id, username, display_name AS contestant_name
        FROM competition_users
@@ -746,9 +790,10 @@ export async function getJudgeAnswerExportSnapshot(): Promise<JudgeAnswerExportS
        FROM competition_answers a
        INNER JOIN competition_questions q ON q.id = a.question_id
        INNER JOIN competition_users u ON u.id = a.contestant_id
-       WHERE q.status IN ('published', 'closed')
+       WHERE q.phase = ? AND (q.phase = 'test' OR q.status IN ('published', 'closed'))
          AND u.role = 'contestant' AND u.active = TRUE AND u.deleted_at IS NULL
        ORDER BY q.published_at DESC, q.id DESC, u.display_name, u.username`,
+      [phase],
     ),
   ]);
 
@@ -785,18 +830,22 @@ export async function saveAnswer(input: {
   contestantId: number;
   contentHtml: string;
   submit: boolean;
+  generation?: number;
 }): Promise<SavedAnswer> {
   await ensureCompetitionSchema();
   const connection = await competitionPool().getConnection();
   return withCompetitionTransaction(connection, async (transaction) => {
     const control = await lockCompetitionControl(transaction);
-    if (!Boolean(Number(control.active))) throw new Error("competition_not_running");
-    const [questions] = await transaction.execute<(RowDataPacket & { status: QuestionStatus; title: string })[]>(
-      "SELECT status, title FROM competition_questions WHERE id = ? FOR UPDATE",
+    if ((input.generation ?? 0) !== Number(control.generation ?? 0)) throw new Error("competition_generation_changed");
+    const testing = control.phase === "test" || control.started_at === null;
+    if (!testing && !Boolean(Number(control.active))) throw new Error("competition_not_running");
+    const [questions] = await transaction.execute<(RowDataPacket & { phase: QuestionPhase; status: QuestionStatus; title: string })[]>(
+      "SELECT phase, status, title FROM competition_questions WHERE id = ? FOR UPDATE",
       [input.questionId],
     );
     if (!questions[0]) throw new Error("question_not_found");
-    if (questions[0].status !== "published") throw new Error("question_not_open");
+    if ((questions[0].phase ?? "competition") !== (testing ? "test" : "competition")) throw new Error("question_phase_changed");
+    if (!testing && questions[0].status !== "published") throw new Error("question_not_open");
 
     const [answers] = await transaction.execute<AnswerRow[]>(
       `SELECT id, question_id, content_html, status, first_saved_at, updated_at, submitted_at

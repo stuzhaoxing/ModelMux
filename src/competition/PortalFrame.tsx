@@ -13,15 +13,15 @@ import {
   contestantViewRoutes,
   type ContestantView,
 } from "@/lib/competition/navigation";
-import type { SessionUser } from "@/lib/competition/types";
-import type { OperationMode } from "@/lib/gateway/operation-mode";
+import { competitionModeFromControl } from "@/lib/competition/control";
+import type { CompetitionControl, SessionUser } from "@/lib/competition/types";
 import { OperationModeBanner } from "./OperationModeBanner";
 
 export function PortalFrame({
   role,
   user,
   online,
-  mode,
+  competition,
   onLogout,
   activeView,
   onViewChange,
@@ -30,15 +30,16 @@ export function PortalFrame({
   role: "judge" | "contestant";
   user: SessionUser;
   online: boolean;
-  mode: OperationMode | null;
+  competition: CompetitionControl | null;
   onLogout: () => void;
   activeView?: ContestantView;
   onViewChange?: (view: ContestantView) => void;
   children: React.ReactNode;
 }) {
+  const mode = competition ? competitionModeFromControl(competition) : null;
   return (
     <div className={`competition-portal ${role} mode-${mode ?? "unknown"}`}>
-      <OperationModeBanner mode={mode} />
+      <OperationModeBanner competition={competition} />
       <header className="competition-header">
         <a className="competition-brand" href={role === "judge" ? "/judge/dashboard" : "/contestant/questions"}>
           <span className="competition-brand-mark"><span /><span /><span /></span>

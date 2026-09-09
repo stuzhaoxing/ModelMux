@@ -62,6 +62,6 @@ describe("judge question creation", () => {
     }));
 
     expect(response.status).toBe(201);
-    expect(mocks.createQuestion).toHaveBeenCalledWith({ authorId: null, title, contentHtml: "<p>正文</p>" });
+    expect(mocks.createQuestion).toHaveBeenCalledWith({ authorId: null, title, contentHtml: "<p>正文</p>", phase: "competition" });
   });
 });

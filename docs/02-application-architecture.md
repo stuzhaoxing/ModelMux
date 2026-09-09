@@ -47,9 +47,9 @@ Linux + systemd + nginx             Mac mini + launchd
 
 未配置完整的管理密码和会话签名密钥时，管理员登录返回 `503`，不会以匿名方式开放。选手接口未配置 Client Key 时返回 `503 client_auth_not_configured`；提供错误 Key 时返回 `401 invalid_api_key`。
 
-管理员可在“系统设置”停止模型 API。停止后，OpenAI 兼容模型端点的新请求统一返回 `503 service_suspended`，管理控制台不受影响。`/health` 返回 HTTP 200、`status: "suspended"`、`ready: true` 和 `apiReady: false`，使部署平台继续监控进程，同时明确模型 API 并未开放。
+模型 API 始终开启，网关总览和系统设置页及其导航入口均已移除，旧地址 `/admin`、`/admin/settings` 永久重定向到 `/admin/competition`。运行模式统一从 MySQL 比赛记录推导：正式比赛开始前为测试模式，正式比赛开始后为比赛模式，结束后保留比赛模式。
 
-`/health` 还会探测考核数据库：配置了 `MODELMUX_DATABASE_URL` 却连不上时返回 HTTP 503、`status: "degraded"`、`ready: false`，并在 `database` 字段给出 `unreachable`、`auth_failed`、`missing_database`、`timeout` 之一。停服开关只关模型 API，答题、评委工作台和登录仍然全靠 MySQL，所以数据库故障的优先级高于停服状态。探测只做一次 `SELECT 1` 并带 2 秒超时，不触发建表；没有配置数据库的纯网关实例只报 `configured: false`，不影响就绪判定。
+`/health` 还会探测考核数据库：配置了 `MODELMUX_DATABASE_URL` 却连不上时返回 HTTP 503、`status: "degraded"`、`ready: false`，并在 `database` 字段给出 `unreachable`、`auth_failed`、`missing_database`、`timeout` 之一。答题、评委工作台和登录依赖 MySQL，数据库故障优先报告为 `degraded`。探测只做一次 `SELECT 1` 并带 2 秒超时，不触发建表；没有配置数据库的纯网关实例只报 `configured: false`，不影响就绪判定。
 
 ## 3. 模型路由
 
@@ -59,16 +59,13 @@ Qwen 三档均按多模态输入模型开放，支持文本、图像和视频理
 
 ```text
 deepseek-v4-pro
-├── 优先级 100：DeepSeek 官方 / deepseek-v4-pro
-└── 优先级 70：硅基流动 / 已验证的 DeepSeek 备用模型
+└── 优先级 100：DeepSeek 官方 / deepseek-v4-pro
 
 qwen3.7-plus
-├── 优先级 100：阿里云百炼 / qwen3.7-plus
-└── 优先级 70：硅基流动 / 已验证的 Qwen 备用模型
+└── 优先级 100：阿里云百炼 / qwen3.7-plus
 
 qwen3.7-max（选手稳定 ID）
-├── 优先级 100：阿里云百炼 / qwen3.7-max-2026-06-08（文本、图像、视频）
-└── 优先级 70：硅基流动 / 已验证的 Qwen 备用模型
+└── 优先级 100：阿里云百炼 / qwen3.7-max-2026-06-08（文本、图像、视频）
 
 kimi/kimi-k3
 └── 优先级 100：阿里云百炼 Moonshot 原厂直供 / kimi/kimi-k3
@@ -108,7 +105,7 @@ doubao-seed-2-0-pro-260215（仅配置 ARK_API_KEYS 后开放）
 
 当前版本的运行指标和最近 100 条请求元数据只保存在单个 Node.js 进程内，进程重启即清空。供应商密钥和运维客户端密钥保存在部署环境变量中；选手独立 API Key、本场比赛分钟级 Token 汇总和管理员维护的赛前大屏公告随考核数据保存在 MySQL，不保存个人 Token 用量。大屏公告是单例纯文本配置，只允许管理员写入，并且仅在比赛状态为 `not_started` 时覆盖展示。
 
-模型 API 的运行开关是例外：状态原子写入 `MODELMUX_DATA_DIR/gateway-service-state.json`，进程或容器重启后仍保持。状态文件损坏或不可读取时采取失败即关闭策略，管理员可从设置页重新开启并修复文件。
+旧的 `gateway-service-state.json` 和 `gateway-operation-mode.json` 不再读取或写入。模型 API 常开，运行模式跟随持久化的比赛阶段和开始记录；管理员状态接口仅支持读取，不再接受手动切换。
 
 这足以支持单机竞赛联调和约 20 名选手的首版交付，但不等同于完整运营平台。以下能力需要在下一阶段加入共享数据库或 Redis：
 

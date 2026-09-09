@@ -8,9 +8,11 @@
     "pnpm": ">=11.0.0"
   },
   "scripts": {
-    "dev": "next dev -p 1444",
+    "dev": "next dev -H 0.0.0.0 -p $(./scripts/start-competition.sh --port)",
     "build": "next build",
-    "start": "next start -H 0.0.0.0 -p 4000",
+    "start": "./scripts/start-competition.sh",
+    "start:build": "./scripts/start-competition.sh --build",
+    "precheck": "./scripts/start-competition.sh --check",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

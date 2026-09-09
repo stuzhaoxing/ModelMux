@@ -18,11 +18,7 @@ export const dynamic = "force-dynamic";
 
 const screenNoticeSchema = z.object({
   title: z.string().trim().min(1).max(40),
-  content: z.string().trim().max(300),
-  enabled: z.boolean(),
-}).refine((value) => !value.enabled || value.content.length > 0, {
-  message: "展示公告前请先填写正文",
-  path: ["content"],
+  content: z.string().trim().min(1, "展示公告前请先填写正文").max(300),
 });
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
@@ -45,7 +41,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
   try {
     const input = await parseJson(request, screenNoticeSchema);
     return NextResponse.json({
-      notice: await updateCompetitionScreenNotice(input),
+      notice: await updateCompetitionScreenNotice({ ...input, enabled: true }),
     });
   } catch (error) {
     return competitionError(error);

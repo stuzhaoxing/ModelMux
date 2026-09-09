@@ -8,9 +8,9 @@ describe("health outcome", () => {
       .toEqual({ status: "ok", ready: true });
   });
 
-  it("keeps a suspended gateway healthy so the admin console stays reachable", () => {
+  it("does not let a legacy stopped state hide missing configuration", () => {
     expect(healthOutcome({ serviceEnabled: false, configured: false, databaseReady: true }))
-      .toEqual({ status: "suspended", ready: true });
+      .toEqual({ status: "needs_config", ready: false });
   });
 
   it("reports needs_config when the gateway runs without provider or client keys", () => {

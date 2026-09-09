@@ -16,8 +16,7 @@ import {
   clientAuthConfigured,
   type ClientIdentity,
 } from "./security";
-import { gatewayServiceState } from "./service-state";
-import { recordCompetitionTokenUsage } from "../competition/repository";
+import { getCompetitionControl, recordCompetitionTokenUsage } from "../competition/repository";
 import { meterTokenUsage } from "./token-usage";
 import type {
   GatewayConfig,
@@ -188,19 +187,6 @@ async function proxyChatCompletionsForClient(
 ): Promise<Response> {
   const config = loadGatewayConfig();
   if (request.method === "OPTIONS") return optionsResponse(request, config);
-  const serviceState = await gatewayServiceState();
-  if (!serviceState.enabled) {
-    return withCors(
-      errorResponse(
-        503,
-        "service_suspended",
-        "模型服务已由管理员停止。",
-        { "Retry-After": "3600" },
-      ),
-      request,
-      config,
-    );
-  }
 
   if (!providedClient && !clientAuthConfigured(config)) {
     return withCors(
@@ -241,6 +227,7 @@ async function proxyChatCompletionsForClient(
     );
   }
 
+  const generation = client.contestantId !== null ? (await getCompetitionControl()).generation ?? 0 : undefined;
   const requestId = randomUUID();
   const beganAt = Date.now();
   let lastStatus = 502;
@@ -290,7 +277,7 @@ async function proxyChatCompletionsForClient(
         ? meterTokenUsage(
             upstream.body,
             prepared.payload.stream === true,
-            recordCompetitionTokenUsage,
+            (usage) => recordCompetitionTokenUsage(usage, generation),
           )
         : upstream.body;
       return withCors(

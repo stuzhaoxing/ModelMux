@@ -22,7 +22,7 @@ export default function AdminLogin() {
         method: "POST",
         body: JSON.stringify({ password }),
       });
-      router.replace("/admin");
+      router.replace("/admin/competition");
       router.refresh();
     } catch (loginError) {
       setError(loginError instanceof Error ? loginError.message : "登录失败");

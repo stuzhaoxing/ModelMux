@@ -1,33 +1,16 @@
 import { loadGatewayConfig } from "@/lib/gateway/config";
 import { errorResponse, optionsResponse, withCors } from "@/lib/gateway/http";
 import { authenticateClient, clientAuthConfigured } from "@/lib/gateway/security";
-import { gatewayServiceState } from "@/lib/gateway/service-state";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request): Promise<Response> {
   const config = loadGatewayConfig();
-  const serviceState = await gatewayServiceState();
-  if (!serviceState.enabled) {
-    return withCors(
-      errorResponse(
-        503,
-        "service_suspended",
-        "模型服务已由管理员停止。",
-        { "Retry-After": "3600" },
-      ),
-      request,
-      config,
-    );
-  }
+
   if (!clientAuthConfigured(config)) {
     return withCors(
-      errorResponse(
-        503,
-        "client_auth_not_configured",
-        "网关尚未配置选手访问密钥。",
-      ),
+      errorResponse(503, "client_auth_not_configured", "网关尚未配置选手访问密钥。"),
       request,
       config,
     );

@@ -289,7 +289,10 @@ export async function readMedia(id: number): Promise<{
   try {
     const file = await open(filePath, "r");
     return {
-      stream: file.readableWebStream({ autoClose: true }),
+      // Readable.toWeb yields Uint8Array chunks on every Node version. FileHandle
+      // .readableWebStream yields ArrayBuffer chunks before Node 24, which the Node
+      // response writer rejects with ERR_INVALID_ARG_TYPE mid-pipe.
+      stream: Readable.toWeb(file.createReadStream({ autoClose: true })) as NodeReadableStream,
       mimeType: record.mime_type,
       originalName: record.original_name,
       byteSize: String(record.byte_size),
@@ -318,6 +321,7 @@ export async function contestantCanReadMedia(
          AND EXISTS(
            SELECT 1 FROM competition_control
            WHERE id = 1 AND status = 'running'
+             AND phase = competition_questions.phase
              AND started_at <= CURRENT_TIMESTAMP(3)
              AND ends_at > CURRENT_TIMESTAMP(3)
          )

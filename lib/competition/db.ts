@@ -10,9 +10,31 @@ declare global {
   var __modelmuxCompetitionSchemaVersion: number | undefined;
 }
 
-const competitionSchemaVersion = 16;
+const competitionSchemaVersion = 18;
 
 const schemaStatements = [
+  `CREATE TABLE IF NOT EXISTS competition_archives (
+    id VARCHAR(36) NOT NULL,
+    source_generation BIGINT UNSIGNED NOT NULL,
+    reason ENUM('reset', 'before_restore') NOT NULL,
+    actor_name VARCHAR(100) NOT NULL,
+    answer_count BIGINT UNSIGNED NOT NULL,
+    submitted_count BIGINT UNSIGNED NOT NULL,
+    contestant_count BIGINT UNSIGNED NOT NULL,
+    control_json JSON NOT NULL,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    UNIQUE KEY competition_archives_generation (source_generation)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
+  `CREATE TABLE IF NOT EXISTS competition_archive_entries (
+    archive_id VARCHAR(36) NOT NULL,
+    kind VARCHAR(24) NOT NULL,
+    row_index BIGINT UNSIGNED NOT NULL,
+    data JSON NOT NULL,
+    PRIMARY KEY (archive_id, kind, row_index),
+    CONSTRAINT competition_archive_entries_fk FOREIGN KEY (archive_id)
+      REFERENCES competition_archives(id) ON DELETE RESTRICT
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
   `CREATE TABLE IF NOT EXISTS competition_users (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     role ENUM('judge', 'contestant') NOT NULL,
@@ -48,6 +70,7 @@ const schemaStatements = [
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
   `CREATE TABLE IF NOT EXISTS competition_questions (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    phase ENUM('test', 'competition') NOT NULL DEFAULT 'competition',
     title VARCHAR(200) NOT NULL,
     content_html MEDIUMTEXT NOT NULL,
     status ENUM('draft', 'published', 'closed') NOT NULL DEFAULT 'draft',
@@ -64,6 +87,7 @@ const schemaStatements = [
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
   `CREATE TABLE IF NOT EXISTS competition_control (
     id TINYINT UNSIGNED NOT NULL,
+    phase ENUM('test', 'competition') NOT NULL DEFAULT 'competition',
     status ENUM('not_started', 'running', 'ended') NOT NULL DEFAULT 'not_started',
     duration_minutes BIGINT UNSIGNED NOT NULL DEFAULT 90,
     started_at DATETIME(3) NULL,
@@ -188,6 +212,25 @@ export async function ensureCompetitionSchema(): Promise<void> {
       const pool = competitionPool();
       for (const statement of schemaStatements) {
         await pool.execute(statement);
+      }
+      const [generationColumns] = await pool.execute<RowDataPacket[]>(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'competition_control' AND COLUMN_NAME = 'generation'`,
+      );
+      if (generationColumns.length === 0) {
+        await pool.execute("ALTER TABLE competition_control ADD COLUMN generation BIGINT UNSIGNED NOT NULL DEFAULT 0");
+      }
+      for (const table of ["competition_questions", "competition_control"]) {
+        const [phaseColumns] = await pool.execute<RowDataPacket[]>(
+          `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'phase'`,
+          [table],
+        );
+        if (phaseColumns.length === 0) {
+          await pool.execute(
+            `ALTER TABLE ${table} ADD COLUMN phase ENUM('test', 'competition') NOT NULL DEFAULT 'competition' AFTER id`,
+          );
+        }
       }
       const [columns] = await pool.execute<RowDataPacket[]>(
         `SELECT COLUMN_NAME

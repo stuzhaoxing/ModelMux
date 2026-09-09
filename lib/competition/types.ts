@@ -7,8 +7,12 @@ export type CompetitionRole = "judge" | "contestant";
 export type QuestionStatus = "draft" | "published" | "closed";
 export type AnswerStatus = "not_started" | "draft" | "submitted";
 export type CompetitionControlState = "not_started" | "running" | "ended";
+export type QuestionPhase = "test" | "competition";
 
 export interface CompetitionControl {
+  /** Changes only when answers are reset or restored. Legacy clients use generation zero. */
+  generation?: number;
+  phase: QuestionPhase;
   state: CompetitionControlState;
   durationMinutes: number;
   startedAt: string | null;
@@ -56,6 +60,7 @@ export interface SessionUser {
 }
 
 export interface CompetitionQuestion {
+  phase: QuestionPhase;
   id: number;
   title: string;
   contentHtml: string;

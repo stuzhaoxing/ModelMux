@@ -16,7 +16,6 @@ import {
   competitionScreenGrid,
   competitionScreenProgressChanges,
   competitionScreenProgressCount,
-  competitionScreenNoticeVisible,
   competitionScreenStageAt,
   type CompetitionScreenContestant,
   type CompetitionScreenContestantStatus,
@@ -37,8 +36,8 @@ const tokenMinuteBucketCount = 90;
 const stageLabels: Record<CompetitionScreenStage, string> = {
   setup: "等待题目发布",
   scheduled: "比赛尚未开始",
-  rehearsal: "测试演练中",
-  live: "比赛进行中",
+  rehearsal: "测试",
+  live: "比赛中",
   finished: "比赛已结束",
 };
 
@@ -82,15 +81,6 @@ function formatDuration(secondsValue: number): string {
   return [hours, minutes, seconds].map((part) => String(part).padStart(2, "0")).join(":");
 }
 
-function simulationCountdown(snapshot: CompetitionScreenSnapshot, now: number): string {
-  const simulation = snapshot.simulation;
-  if (!simulation) return "--:--:--";
-  const remainingAtSnapshot = (simulation.totalMinutes - simulation.elapsedMinutes) * 60;
-  const elapsedSinceSnapshot = Math.max(0, now - Date.parse(snapshot.generatedAt));
-  const acceleratedSeconds = Math.floor((elapsedSinceSnapshot * 60) / simulation.realMsPerMinute);
-  return formatDuration(remainingAtSnapshot - acceleratedSeconds);
-}
-
 function formatTokenTotal(value: number): string {
   return value.toLocaleString("zh-CN");
 }
@@ -114,14 +104,8 @@ function summaryStage(snapshot: CompetitionScreenSnapshot, now: number): Competi
 
 export default function CompetitionScreen({
   initialSnapshot,
-  mockMode = false,
-  mockStartedAt = null,
-  noticePreview = false,
 }: {
   initialSnapshot: CompetitionScreenSnapshot | null;
-  mockMode?: boolean;
-  mockStartedAt?: number | null;
-  noticePreview?: boolean;
 }) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [now, setNow] = useState(() => initialSnapshot ? Date.parse(initialSnapshot.generatedAt) : Date.now());
@@ -161,17 +145,7 @@ export default function CompetitionScreen({
       if (loading) return;
       loading = true;
       try {
-        const mockQuery = mockMode && mockStartedAt !== null
-          ? `?mock=1&startedAt=${mockStartedAt}`
-          : "";
-        const response = await fetch(`/api/competition/screen${mockQuery}`, { cache: "no-store" });
-        if (response.status === 401) {
-          if (!stopped) {
-            setSnapshot(null);
-            window.location.reload();
-          }
-          return;
-        }
+        const response = await fetch("/api/competition/screen", { cache: "no-store" });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const next = await response.json() as CompetitionScreenSnapshot;
         if (!stopped) {
@@ -193,7 +167,7 @@ export default function CompetitionScreen({
       stopped = true;
       window.clearInterval(interval);
     };
-  }, [highlightProgressChanges, mockMode, mockStartedAt]);
+  }, [highlightProgressChanges]);
 
   useEffect(() => () => {
     for (const timer of progressHighlightTimers.current.values()) window.clearTimeout(timer);
@@ -225,20 +199,13 @@ export default function CompetitionScreen({
     );
   }
 
-  const stage = snapshot.simulation ? snapshot.stage : summaryStage(snapshot, now);
-  const countdownTarget = stage === "scheduled" ? snapshot.schedule.startAt : stage === "live" || stage === "rehearsal" ? snapshot.schedule.endAt : null;
-  const countdownLabel = stage === "scheduled" ? "距离比赛开始" : stage === "rehearsal" ? "演练剩余时间" : "比赛剩余时间";
-  const countdownValue = snapshot.simulation
-    ? simulationCountdown(snapshot, now)
-    : formatCountdown(countdownTarget, now);
+  const stage = summaryStage(snapshot, now);
+  const countdownTarget = stage === "scheduled" ? snapshot.schedule.startAt : stage === "live" ? snapshot.schedule.endAt : null;
+  const countdownLabel = stage === "rehearsal" ? undefined : stage === "scheduled" ? "距离比赛开始" : "比赛剩余时间";
+  const countdownValue = formatCountdown(countdownTarget, now);
   const density = screenGrid.rows >= 6 ? "dense" : screenGrid.rows >= 5 ? "compact" : "regular";
   const rosterStyle = { "--screen-columns": screenGrid.columns, "--screen-rows": screenGrid.rows } as CSSProperties;
-  const showPreStartNotice = snapshot.notice.enabled
-    && Boolean(snapshot.notice.content.trim())
-    && (noticePreview || competitionScreenNoticeVisible({
-      competitionState: snapshot.competition.state,
-      notice: snapshot.notice,
-    }));
+  const showPreStartNotice = snapshot.competition.state === "not_started";
 
   return (
     <main className={styles.screen} data-stage={stage}>
@@ -246,7 +213,7 @@ export default function CompetitionScreen({
       <CompetitionScreenBrand
         countdownLabel={countdownLabel}
         countdownValue={countdownValue}
-        stageDetail={`已发布 ${snapshot.summary.publishedQuestions}/${snapshot.summary.questionTotal} 题`}
+        stageDetail={stage === "rehearsal" ? "正式比赛尚未开始" : `已发布 ${snapshot.summary.publishedQuestions}/${snapshot.summary.questionTotal} 题`}
         stageLabel={stageLabels[stage]}
         time={formatClock(now)}
       />
@@ -293,7 +260,8 @@ export default function CompetitionScreen({
 }
 
 function PreStartNoticeOverlay({ notice }: { notice: CompetitionScreenNotice }) {
-  const contentLength = notice.content.length;
+  const content = notice.content.trim() || "当前为赛前测试环节，正式比赛尚未开始。";
+  const contentLength = content.length;
   const density = contentLength <= 72
     ? "huge"
     : contentLength <= 160
@@ -301,7 +269,7 @@ function PreStartNoticeOverlay({ notice }: { notice: CompetitionScreenNotice }) 
       : contentLength <= 300
         ? "medium"
         : "compact";
-  const lines = notice.content.split(/\r?\n/);
+  const lines = content.split(/\r?\n/);
 
   return (
     <section

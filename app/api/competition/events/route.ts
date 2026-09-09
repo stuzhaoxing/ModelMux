@@ -5,7 +5,7 @@ import { activityAfter, latestActivityId } from "@/lib/competition/activity";
 import { coalesceCompetitionEvents, competitionEventsAfter, latestCompetitionEventId } from "@/lib/competition/events";
 import { competitionError, requireJudgeOperator, requireRole } from "@/lib/competition/http";
 import type { CompetitionRole } from "@/lib/competition/types";
-import { operationModeState } from "@/lib/gateway/operation-mode";
+import { competitionOperationMode } from "@/lib/competition/mode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     // Judges get the live 现场日志 on the same channel; contestants never do.
     let activityCursor = role === "judge" ? await latestActivityId() : 0;
     // 测试/比赛模式必须在两个端上同步显眼地切换，所以复用这条已有的实时通道。
-    let mode = (await operationModeState()).mode;
+    let mode = (await competitionOperationMode()).mode;
     const encoder = new TextEncoder();
     const interval = pollIntervalMs();
     let connected = false;
@@ -56,7 +56,7 @@ export async function GET(request: NextRequest): Promise<Response> {
         await new Promise((resolve) => setTimeout(resolve, interval));
         if (cancelled) return;
         try {
-          const currentMode = (await operationModeState()).mode;
+          const currentMode = (await competitionOperationMode()).mode;
           if (currentMode !== mode) {
             mode = currentMode;
             controller.enqueue(

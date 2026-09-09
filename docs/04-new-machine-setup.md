@@ -29,7 +29,7 @@
 按需带（都是本地产物，不影响跑起来）：
 
 - `.modelmux-data/uploads/`：本地调试上传的题目和答卷附件
-- `.modelmux-data/gateway-service-state.json`、`gateway-operation-mode.json`：停服开关和运行模式，新机器默认即可
+- 旧的 `.modelmux-data/gateway-service-state.json`、`gateway-operation-mode.json` 不再生效，无需迁移；模型 API 常开，运行模式从 MySQL 比赛记录读取
 - `output/test-accounts/`：生成的选手账号交接单，含明文口令
 
 不要带 `.next/`、`node_modules/`、`tsconfig.tsbuildinfo`、`tmp/`，新机器重新装重新构建。

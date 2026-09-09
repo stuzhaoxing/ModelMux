@@ -380,6 +380,8 @@
 .view-tabs button.active::after { background: #396b5a; }
 .view-tabs button:disabled { opacity: .45; cursor: not-allowed; }
 .view-tabs svg { width: 16px; }
+.question-phase-tabs { padding: 0 24px; border-bottom: 1px solid #d6dce0; background: #fff; }
+.question-phase-tabs button { white-space: nowrap; }
 .judge-actions { gap: 8px; }
 
 .primary-action,
@@ -750,6 +752,7 @@
 
 .dashboard-publish-panel {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 14px;
   min-height: 86px;
@@ -801,7 +804,7 @@
 .dashboard-publish-countdown[data-finished="true"] strong { color: #657178; }
 .dashboard-publish-controls { display: flex; align-items: center; flex: 0 0 auto; gap: 12px; }
 .dashboard-publish-controls .secondary-action { flex: 0 0 auto; min-width: 108px; }
-.dashboard-start-controls { display: flex; align-items: flex-end; flex: 0 0 auto; gap: 10px; }
+.dashboard-start-controls { display: flex; flex-wrap: wrap; align-items: flex-end; flex: 0 1 auto; gap: 10px; }
 .dashboard-start-controls label { display: grid; gap: 4px; color: #6f7a81; font-size: 11px; font-weight: 650; }
 .dashboard-start-controls label > span:last-child { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .dashboard-start-controls input {
@@ -816,6 +819,8 @@
 }
 .dashboard-start-controls input:focus { outline: 2px solid #769987; outline-offset: 1px; }
 .dashboard-start-controls .primary-action { min-width: 132px; }
+.dashboard-start-controls a.primary-action { text-decoration: none; }
+.competition-reset-panel { scroll-margin-top: 24px; }
 
 .dashboard-screen-notice {
   margin-bottom: 16px;
@@ -1623,6 +1628,7 @@
 .account-name-cell { overflow: hidden; }
 .account-name-input { width: 100%; min-width: 0; height: 34px; padding: 0 8px; color: #273138; background: #fff; border: 1px solid #9eb9ad; border-radius: 3px; font-size: 13px; }
 .account-name-input:focus { outline: 2px solid rgba(57, 107, 90, .18); outline-offset: 1px; }
+.account-edit-hint { margin: 0; padding: 12px 18px; color: #657078; font-size: 12px; line-height: 1.6; }
 .account-row small { margin-top: 2px; color: #91999e; font: 11px "SFMono-Regular", Consolas, monospace; }
 .account-credential { overflow: hidden; color: #3d484e; font: 12px "SFMono-Regular", Consolas, monospace; white-space: nowrap; text-overflow: ellipsis; }
 .account-credential.unavailable { color: #979fa4; font-family: inherit; }
@@ -1839,6 +1845,20 @@
   color: #4a3612;
   background: #f3d894;
   border-bottom: 1px solid #d8b662;
+}
+
+.operation-mode-banner.ended {
+  color: #46545c;
+  background: #edf1f3;
+  border-bottom: 1px solid #cdd7dc;
+}
+
+.operation-mode-banner.ended .operation-mode-icon {
+  background: rgba(70, 84, 92, .1);
+}
+
+.operation-mode-banner.ended .operation-mode-pulse {
+  background: #667780;
 }
 
 .operation-mode-icon {
@@ -2112,4 +2132,25 @@
 @media (prefers-reduced-motion: reduce) {
   .competition-portal *,
   .competition-login * { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
+
+
+/* Competition reset and immutable history. */
+.competition-reset-panel { padding: 24px; }
+.competition-reset-panel > p { line-height: 1.7; margin: 12px 0; }
+.reset-hint, .reset-archive-list small { color: var(--text-muted, #64748b); font-size: 13px; }
+.reset-confirmation { padding: 20px; margin: 18px 0; border: 1px solid #f1b7ad; border-radius: 12px; background: #fff7f5; }
+.reset-confirmation p { line-height: 1.6; }
+.reset-confirmation label { display: grid; gap: 8px; margin: 16px 0; }
+.reset-confirmation input { padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; max-width: 360px; width: 100%; box-sizing: border-box; }
+.reset-actions, .reset-archive-heading, .reset-archive-heading h3 { display: flex; align-items: center; gap: 10px; }
+.reset-archive-heading { justify-content: space-between; margin-top: 22px; }
+.reset-archive-list { padding: 0; margin: 12px 0 0; list-style: none; max-height: 420px; overflow: auto; }
+.reset-archive-list li { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px 0; border-top: 1px solid #e2e8f0; }
+.reset-archive-list p { margin: 6px 0; font-size: 13px; }
+.reset-archive-list small { overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .competition-reset-panel { padding: 16px; }
+  .reset-archive-list li { align-items: flex-start; flex-direction: column; }
+  .reset-confirmation { padding: 14px; }
 }

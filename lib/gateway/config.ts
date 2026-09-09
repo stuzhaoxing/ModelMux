@@ -238,49 +238,17 @@ function defaultModels(env: NodeJS.ProcessEnv): ModelRouteGroup[] {
       "https://dashscope.aliyuncs.com/compatible-mode",
     ),
   );
-  const siliconflowBaseUrl = normalizeBaseUrl(
-    envValue(env.SILICONFLOW_BASE_URL, "https://api.siliconflow.cn"),
-  );
   const arkBaseUrl = normalizeBaseUrl(
     envValue(env.ARK_BASE_URL, "https://ark.cn-beijing.volces.com/api"),
   );
 
-  const deepseekRoutes = (
-    officialModel: string,
-    siliconflowModel: string,
-  ): ProviderRoute[] => [
+  const deepseekRoutes = (officialModel: string): ProviderRoute[] => [
     {
       provider: "deepseek",
       baseUrl: deepseekBaseUrl,
       upstreamModel: officialModel,
       apiKeyEnv: "DEEPSEEK_API_KEYS",
       priority: 100,
-    },
-    {
-      provider: "siliconflow",
-      baseUrl: siliconflowBaseUrl,
-      upstreamModel: siliconflowModel,
-      apiKeyEnv: "SILICONFLOW_API_KEYS",
-      priority: 70,
-    },
-  ];
-  const qwenRoutes = (
-    officialModel: string,
-    siliconflowModel: string,
-  ): ProviderRoute[] => [
-    {
-      provider: "aliyun",
-      baseUrl: dashscopeBaseUrl,
-      upstreamModel: officialModel,
-      apiKeyEnv: "DASHSCOPE_API_KEYS",
-      priority: 100,
-    },
-    {
-      provider: "siliconflow",
-      baseUrl: siliconflowBaseUrl,
-      upstreamModel: siliconflowModel,
-      apiKeyEnv: "SILICONFLOW_API_KEYS",
-      priority: 70,
     },
   ];
   const dashscopeDirectRoute = (
@@ -337,13 +305,7 @@ function defaultModels(env: NodeJS.ProcessEnv): ModelRouteGroup[] {
   const models: ModelRouteGroup[] = [
     modelGroup(
       deepseekFlashModel,
-      deepseekRoutes(
-        deepseekFlashModel,
-        envValue(
-          env.SILICONFLOW_MODEL_DEEPSEEK_FLASH,
-          "deepseek-ai/DeepSeek-V3.2",
-        ),
-      ),
+      deepseekRoutes(deepseekFlashModel),
       {
         family: "deepseek",
         tier: "flash",
@@ -353,13 +315,7 @@ function defaultModels(env: NodeJS.ProcessEnv): ModelRouteGroup[] {
     ),
     modelGroup(
       deepseekProModel,
-      deepseekRoutes(
-        deepseekProModel,
-        envValue(
-          env.SILICONFLOW_MODEL_DEEPSEEK_PRO,
-          "Pro/deepseek-ai/DeepSeek-V3.2",
-        ),
-      ),
+      deepseekRoutes(deepseekProModel),
       {
         family: "deepseek",
         tier: "pro",
@@ -369,13 +325,7 @@ function defaultModels(env: NodeJS.ProcessEnv): ModelRouteGroup[] {
     ),
     modelGroup(
       qwenFlashModel,
-      qwenRoutes(
-        qwenFlashModel,
-        envValue(
-          env.SILICONFLOW_MODEL_QWEN_FLASH,
-          "Qwen/Qwen3.5-35B-A3B",
-        ),
-      ),
+      dashscopeDirectRoute("aliyun", qwenFlashModel),
       {
         family: "qwen",
         tier: "flash",
@@ -385,13 +335,7 @@ function defaultModels(env: NodeJS.ProcessEnv): ModelRouteGroup[] {
     ),
     modelGroup(
       qwenPlusModel,
-      qwenRoutes(
-        qwenPlusModel,
-        envValue(
-          env.SILICONFLOW_MODEL_QWEN_PLUS,
-          "Qwen/Qwen3.5-122B-A10B",
-        ),
-      ),
+      dashscopeDirectRoute("aliyun", qwenPlusModel),
       {
         family: "qwen",
         tier: "plus",
@@ -401,13 +345,7 @@ function defaultModels(env: NodeJS.ProcessEnv): ModelRouteGroup[] {
     ),
     modelGroup(
       qwenMaxModel,
-      qwenRoutes(
-        qwenMaxUpstreamModel,
-        envValue(
-          env.SILICONFLOW_MODEL_QWEN_MAX,
-          "Qwen/Qwen3.5-397B-A17B",
-        ),
-      ),
+      dashscopeDirectRoute("aliyun", qwenMaxUpstreamModel),
       {
         family: "qwen",
         tier: "max",
@@ -578,11 +516,6 @@ export function gatewayStatus(
   requestOrigin: string,
   startedAt: number,
   env: NodeJS.ProcessEnv = process.env,
-  serviceState: {
-    enabled: boolean;
-    updatedAt: string | null;
-    stateFileValid: boolean;
-  } = { enabled: true, updatedAt: null, stateFileValid: true },
   modeState: OperationModeState = {
     mode: "test",
     updatedAt: null,
@@ -602,12 +535,7 @@ export function gatewayStatus(
   const externalBaseUrl = config.externalBaseUrl ?? (config.deploymentMode === "public" ? apiOrigin : null);
 
   return {
-    state:
-      !serviceState.enabled
-        ? "suspended"
-        : providerConfigured && clientAuthConfigured
-          ? "running"
-          : "needs_config",
+    state: providerConfigured && clientAuthConfigured ? "running" : "needs_config",
     deploymentMode: config.deploymentMode,
     apiBase: `${apiOrigin}/v1`,
     internalEndpoint: ingressEndpoint(internalBaseUrl),
@@ -615,9 +543,9 @@ export function gatewayStatus(
     startedAt,
     providerConfigured,
     clientAuthConfigured,
-    serviceEnabled: serviceState.enabled,
-    serviceStateUpdatedAt: serviceState.updatedAt,
-    serviceStateFileValid: serviceState.stateFileValid,
+    serviceEnabled: true,
+    serviceStateUpdatedAt: null,
+    serviceStateFileValid: true,
     operationMode: modeState.mode,
     operationModeUpdatedAt: modeState.updatedAt,
     operationModeStateFileValid: modeState.stateFileValid,

@@ -322,7 +322,6 @@ export function ContestantApiDocs() {
             <div className="api-error-table">
               <div><code>invalid_api_key</code><span>API Key 缺失、错误或账号已停用</span><b>401</b></div>
               <div><code>model_not_allowed</code><span>模型不在竞赛允许列表中</span><b>400</b></div>
-              <div><code>service_suspended</code><span>管理员已暂停模型服务</span><b>503</b></div>
             </div>
           </section>
         </article>

@@ -14,7 +14,7 @@ export async function GET(): Promise<Response> {
   const config = loadGatewayConfig();
   const [serviceState, modeState, database] = await Promise.all([
     gatewayServiceState(),
-    operationModeState(),
+    operationModeState().catch(() => ({ mode: null, stateFileValid: false })),
     competitionDatabaseHealth(),
   ]);
   const models = publicModels(config);

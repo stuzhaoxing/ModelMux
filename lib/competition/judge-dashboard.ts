@@ -48,7 +48,7 @@ export function buildJudgeDashboardSummary(questions: JudgeQuestion[]): JudgeDas
       closed: questions.filter((question) => question.status === "closed").length,
     },
     answers: {
-      questionCount: answerableQuestions.length,
+      questionCount: answerableQuestions.filter((question) => question.progress.submitted + question.progress.drafting > 0).length,
       ...answers,
       submissionRate: answers.total === 0 ? 0 : Math.round((answers.submitted / answers.total) * 100),
     },

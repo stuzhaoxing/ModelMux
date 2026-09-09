@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { eventStreamRetryDelayMs } from "@/lib/competition/event-stream";
 import type { ActivityEntry } from "@/lib/competition/types";
@@ -21,6 +21,7 @@ export default function JudgeActivityPage() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [reachedStart, setReachedStart] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const reloadVersion = useRef(0);
 
   const mergeActivity = useCallback((incoming: ActivityEntry[]) => {
     if (incoming.length === 0) return;
@@ -33,9 +34,11 @@ export default function JudgeActivityPage() {
   }, []);
 
   const loadActivity = useCallback(async () => {
+    const version = ++reloadVersion.current;
     try {
       const result = await apiRequest<ActivityPage>("/api/competition/judge/activity");
-      mergeActivity(result.activity);
+      if (version !== reloadVersion.current) return;
+      setActivity(result.activity);
       setTotal(result.total);
       setReachedStart(result.reachedStart);
       setError(null);
@@ -44,14 +47,16 @@ export default function JudgeActivityPage() {
     } finally {
       setLoading(false);
     }
-  }, [mergeActivity]);
+  }, []);
 
   const loadOlderActivity = useCallback(async () => {
     const oldest = activity.at(-1);
     if (!oldest || loadingOlder) return;
+    const version = reloadVersion.current;
     setLoadingOlder(true);
     try {
       const result = await apiRequest<ActivityPage>(`/api/competition/judge/activity?before=${oldest.id}`);
+      if (version !== reloadVersion.current) return;
       mergeActivity(result.activity);
       setTotal(result.total);
       if (result.reachedStart) setReachedStart(true);
@@ -65,9 +70,10 @@ export default function JudgeActivityPage() {
 
   useEffect(() => {
     let active = true;
+    const version = reloadVersion.current;
     apiRequest<ActivityPage>("/api/competition/judge/activity")
       .then((result) => {
-        if (!active) return;
+        if (!active || version !== reloadVersion.current) return;
         mergeActivity(result.activity);
         setTotal(result.total);
         setReachedStart(result.reachedStart);
@@ -111,6 +117,7 @@ export default function JudgeActivityPage() {
         if (connectedOnce) void loadActivity();
         connectedOnce = true;
       });
+      stream.addEventListener("question-updated", () => void loadActivity());
       stream.addEventListener("activity", (event) => {
         const entries = JSON.parse((event as MessageEvent).data) as ActivityEntry[];
         mergeActivity(entries);

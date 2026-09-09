@@ -83,3 +83,10 @@ describe("local answer draft cache", () => {
     expect(richTextLooksEmpty('<p><img src="/api/competition/media/3" /></p>')).toBe(false);
   });
 });
+
+it("isolates cached drafts across resets and restores, preserving the legacy initial key", () => {
+  const original = localDraftKey(7, 3);
+  expect(original).toBe(localDraftKey(7, 3, 0));
+  expect(localDraftKey(7, 3, 1)).not.toBe(original);
+  expect(localDraftKey(7, 3, 2)).not.toBe(localDraftKey(7, 3, 1));
+});

@@ -17,7 +17,11 @@ export async function GET(request: NextRequest): Promise<Response> {
     const user = requireJudgeOperator(request);
     if (user instanceof NextResponse) return user;
 
-    const archive = await createJudgeAnswerArchive(await getJudgeAnswerExportSnapshot());
+    const phase = request.nextUrl.searchParams.get("phase") ?? "competition";
+    if (phase !== "test" && phase !== "competition") {
+      return NextResponse.json({ error: "题目阶段无效" }, { status: 400 });
+    }
+    const archive = await createJudgeAnswerArchive(await getJudgeAnswerExportSnapshot(phase));
     const stream = createReadStream(archive.filePath);
     const cleanup = () => void rm(archive.directory, { recursive: true, force: true }).catch(() => undefined);
     stream.once("close", cleanup);
@@ -26,7 +30,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       headers: {
         "Cache-Control": "no-store",
         "Content-Type": "application/zip",
-        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(archive.filename)}`,
+        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(`${phase === "test" ? "测试" : "正式"}_${archive.filename}`)}`,
       },
     });
   } catch (error) {

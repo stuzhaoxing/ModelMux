@@ -10,6 +10,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const startSchema = z.object({
+  phase: z.literal("competition").default("competition"),
   durationMinutes: z.number().int().min(1),
 });
 
@@ -30,7 +31,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       actorName: user.displayName,
       questionId: null,
       questionTitle: null,
-      detail: `开始比赛，开放 ${result.questionCount} 道题目，限时 ${input.durationMinutes} 分钟`,
+      detail: `开始正式比赛，开放 ${result.questionCount} 道题目，限时 ${input.durationMinutes} 分钟`,
       outcome: "ok",
     });
     return NextResponse.json({

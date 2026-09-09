@@ -19,7 +19,7 @@ describe("admin navigation", () => {
 
   it("accepts trailing slashes and falls back safely", () => {
     expect(adminViewFromPathname("/admin/accounts/")).toBe("accounts");
-    expect(adminViewFromPathname("/admin/unknown")).toBe("overview");
+    expect(adminViewFromPathname("/admin/unknown")).toBe("competition");
   });
 
   it("only accepts routable child views", () => {
@@ -27,7 +27,6 @@ describe("admin navigation", () => {
     expect(isRoutedAdminViewId("competition")).toBe(true);
     expect(isRoutedAdminViewId("activity")).toBe(true);
     expect(isRoutedAdminViewId("access")).toBe(false);
-    expect(isRoutedAdminViewId("overview")).toBe(false);
     expect(isRoutedAdminViewId("unknown")).toBe(false);
   });
 
@@ -47,7 +46,7 @@ describe("admin navigation", () => {
     expect(isAdminQuestionManagementViewId("questions")).toBe(true);
     expect(isAdminQuestionManagementViewId("answers")).toBe(true);
     expect(isAdminQuestionManagementViewId("competition")).toBe(false);
-    expect(isAdminQuestionManagementViewId("overview")).toBe(false);
+    expect(isAdminQuestionManagementViewId("activity")).toBe(false);
   });
 
   it("routes the standalone activity log page", () => {

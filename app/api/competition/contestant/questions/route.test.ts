@@ -27,7 +27,7 @@ describe("contestant question visibility", () => {
     mocks.requireRole.mockResolvedValue({ id: 7, role: "contestant", username: "player07", displayName: "选手七" });
   });
 
-  it("hides questions and answers before start or after stop", async () => {
+  it("hides questions and answers after the formal competition stops", async () => {
     const competition = { state: "ended", durationMinutes: 90, startedAt: "2026-08-25T08:00:00.000Z", endsAt: "2026-08-25T08:20:00.000Z", stoppedAt: "2026-08-25T08:20:00.000Z" };
     mocks.getCompetitionControl.mockResolvedValue(competition);
 
@@ -38,7 +38,7 @@ describe("contestant question visibility", () => {
     expect(mocks.listAnswersForContestant).not.toHaveBeenCalled();
   });
 
-  it("returns the question workspace only while running", async () => {
+  it("returns the formal workspace while the competition is running", async () => {
     const competition = { state: "running", durationMinutes: 60, startedAt: "2026-08-25T08:00:00.000Z", endsAt: "2026-08-25T09:00:00.000Z", stoppedAt: null };
     const questions = [{ id: 1, title: "第一题" }];
     const answers = [{ id: 9, questionId: 1, status: "draft" }];
@@ -49,5 +49,30 @@ describe("contestant question visibility", () => {
     const response = await GET(new NextRequest("http://localhost/api/competition/contestant/questions"));
 
     expect(await response.json()).toEqual({ questions, answers, competition });
+  });
+
+  it("opens only test questions before the formal competition starts", async () => {
+    const competition = { phase: "test", state: "not_started", startedAt: null, endsAt: null };
+    mocks.getCompetitionControl.mockResolvedValue(competition);
+    mocks.listContestantQuestions.mockResolvedValue([{ id: 2, phase: "test", status: "published" }]);
+    mocks.listAnswersForContestant.mockResolvedValue([{ questionId: 2, status: "draft" }]);
+    const response = await GET(new NextRequest("http://localhost/api/competition/contestant/questions"));
+    expect(await response.json()).toEqual({
+      competition,
+      questions: [{ id: 2, phase: "test", status: "published" }],
+      answers: [{ questionId: 2, status: "draft" }],
+    });
+    expect(mocks.listContestantQuestions).toHaveBeenCalledWith("test");
+    expect(mocks.listAnswersForContestant).toHaveBeenCalledWith(7, "test");
+  });
+
+  it.each(["test", "competition"])("scopes both questions and answers to the active %s phase", async (phase) => {
+    mocks.getCompetitionControl.mockResolvedValue({ phase, state: "running" });
+    mocks.listContestantQuestions.mockResolvedValue([]);
+    mocks.listAnswersForContestant.mockResolvedValue([]);
+    const response = await GET(new NextRequest("http://localhost/api/competition/contestant/questions"));
+    expect(response.status).toBe(200);
+    expect(mocks.listContestantQuestions).toHaveBeenCalledWith(phase);
+    expect(mocks.listAnswersForContestant).toHaveBeenCalledWith(7, phase);
   });
 });

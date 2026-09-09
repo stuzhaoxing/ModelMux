@@ -13,6 +13,7 @@ export const runtime = "nodejs";
 const answerSchema = z.object({
   contentHtml: z.string().max(2_000_000),
   submit: z.boolean().default(false),
+  generation: z.number().int().nonnegative().default(0),
 });
 
 export async function PUT(request: NextRequest, context: { params: Promise<{ id: string }> }): Promise<NextResponse> {
@@ -26,10 +27,11 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     const input = await parseJson(request, answerSchema);
     const contentHtml = cleanRichText(input.contentHtml);
     if (input.submit && !richTextHasContent(contentHtml)) return NextResponse.json({ error: "答案不能为空" }, { status: 400 });
-    const { answer, questionTitle, firstSave } = await saveAnswer({ questionId, contestantId: user.id, contentHtml, submit: input.submit });
+    const { answer, questionTitle, firstSave } = await saveAnswer({ questionId, contestantId: user.id, contentHtml, submit: input.submit, generation: input.generation });
     const action = input.submit ? "answer-submitted" : firstSave ? "answer-started" : "answer-saved";
-    if (action !== "answer-saved" || shouldRecordDraftSave(`${user.id}:${questionId}`, Date.now())) {
+    if (action !== "answer-saved" || shouldRecordDraftSave(`${input.generation}:${user.id}:${questionId}`, Date.now())) {
       await recordActivity({
+        generation: input.generation,
         category: "answer",
         action,
         actorRole: "contestant",
